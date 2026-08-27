@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.next/
+.turbo/
+coverage/
+release-packs/
+*.tsbuildinfo
+.env
+.env.*
+!.env.example
+.DS_Store
+*.tgz

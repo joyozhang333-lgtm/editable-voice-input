@@ -1,0 +1,54 @@
+{
+  "compilerOptions": {
+    "target": "ES2017",
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ],
+    "allowJs": false,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "react-jsx",
+    "incremental": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "baseUrl": "../..",
+    "paths": {
+      "@/*": [
+        "examples/next-app-router/*"
+      ],
+      "@editable-voice-input/core": [
+        "packages/core/src/index.ts"
+      ],
+      "@editable-voice-input/react": [
+        "packages/react/src/index.ts"
+      ],
+      "@editable-voice-input/server": [
+        "packages/server/src/index.ts"
+      ],
+      "@editable-voice-input/provider-openai-compatible": [
+        "packages/provider-openai-compatible/src/index.ts"
+      ]
+    }
+  },
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}

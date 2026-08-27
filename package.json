@@ -1,0 +1,30 @@
+{
+  "name": "editable-voice-input-workspace",
+  "version": "0.1.0-alpha.1",
+  "private": true,
+  "description": "Record, transcribe, edit, and explicitly submit voice input.",
+  "license": "MIT",
+  "packageManager": "pnpm@11.24.0",
+  "engines": {
+    "node": ">=20.11"
+  },
+  "scripts": {
+    "build": "pnpm --filter './packages/**' --filter './examples/**' build",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "pack:check": "node scripts/check-packs.mjs",
+    "pack:release": "pnpm build && pnpm --filter @editable-voice-input/core pack --pack-destination release-packs && pnpm --filter @editable-voice-input/react pack --pack-destination release-packs && pnpm --filter @editable-voice-input/server pack --pack-destination release-packs && pnpm --filter @editable-voice-input/provider-openai-compatible pack --pack-destination release-packs",
+    "scan:secrets": "node scripts/scan-secrets.mjs",
+    "audit:prod": "pnpm audit --prod --audit-level=high --registry=https://registry.npmjs.org",
+    "check": "pnpm typecheck && pnpm test && pnpm build && pnpm pack:check && pnpm scan:secrets && pnpm audit:prod"
+  },
+  "devDependencies": {
+    "@changesets/cli": "2.29.7",
+    "@types/node": "24.10.1",
+    "@vitest/coverage-v8": "4.0.15",
+    "tsup": "8.5.1",
+    "typescript": "5.9.3",
+    "vitest": "4.0.15"
+  }
+}

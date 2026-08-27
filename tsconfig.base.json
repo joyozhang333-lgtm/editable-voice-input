@@ -1,0 +1,28 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "baseUrl": ".",
+    "paths": {
+      "@editable-voice-input/core": ["packages/core/src/index.ts"],
+      "@editable-voice-input/react": ["packages/react/src/index.ts"],
+      "@editable-voice-input/server": ["packages/server/src/index.ts"],
+      "@editable-voice-input/provider-openai-compatible": [
+        "packages/provider-openai-compatible/src/index.ts"
+      ]
+    },
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "useDefineForClassFields": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "declaration": true,
+    "sourceMap": true,
+    "noEmit": true
+  }
+}

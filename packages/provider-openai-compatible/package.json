@@ -1,0 +1,36 @@
+{
+  "name": "@editable-voice-input/provider-openai-compatible",
+  "version": "0.1.0-alpha.1",
+  "description": "Server-side transcription adapter for OpenAI-compatible multipart endpoints.",
+  "license": "MIT",
+  "engines": { "node": ">=20" },
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "files": ["dist", "README.md", "LICENSE"],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm,cjs --dts --clean --sourcemap",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run src"
+  },
+  "dependencies": {
+    "@editable-voice-input/server": "workspace:*"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

@@ -1,0 +1,181 @@
+.evi-root {
+  --evi-accent: #5f584f;
+  --evi-accent-contrast: #ffffff;
+  --evi-surface: #fbfaf8;
+  --evi-text: #252321;
+  --evi-muted: #716c66;
+  --evi-border: #dedad4;
+  --evi-danger: #b34f37;
+  --evi-radius: 16px;
+  --evi-font: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+
+  box-sizing: border-box;
+  width: 100%;
+  color: var(--evi-text);
+  font-family: var(--evi-font);
+}
+
+.evi-root *,
+.evi-root *::before,
+.evi-root *::after {
+  box-sizing: border-box;
+}
+
+.evi-draft {
+  display: block;
+  width: 100%;
+  min-height: 108px;
+  resize: vertical;
+  border: 1px solid var(--evi-border);
+  border-radius: var(--evi-radius);
+  background: var(--evi-surface);
+  color: var(--evi-text);
+  padding: 14px 15px;
+  font: inherit;
+  font-size: 16px;
+  line-height: 1.55;
+  outline: none;
+}
+
+.evi-draft:focus-visible {
+  border-color: var(--evi-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--evi-accent) 16%, transparent);
+}
+
+.evi-draft:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.evi-preview {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.evi-audio {
+  min-width: 0;
+  height: 40px;
+  flex: 1;
+}
+
+.evi-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.evi-voice-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.evi-record-button,
+.evi-submit-button,
+.evi-link-button {
+  min-width: 44px;
+  min-height: 44px;
+  border: 0;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.evi-record-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid var(--evi-border);
+  background: var(--evi-surface);
+  color: var(--evi-text);
+  padding: 0 15px;
+}
+
+.evi-record-button.is-recording {
+  border-color: color-mix(in srgb, var(--evi-danger) 36%, var(--evi-border));
+}
+
+.evi-record-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--evi-accent);
+}
+
+.evi-record-button.is-recording .evi-record-dot {
+  background: var(--evi-danger);
+}
+
+.evi-duration {
+  color: var(--evi-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.evi-submit-button {
+  background: var(--evi-accent);
+  color: var(--evi-accent-contrast);
+  padding: 0 18px;
+}
+
+.evi-link-button {
+  background: transparent;
+  color: var(--evi-muted);
+  padding: 0 10px;
+}
+
+.evi-record-button:focus-visible,
+.evi-submit-button:focus-visible,
+.evi-link-button:focus-visible {
+  outline: 2px solid var(--evi-accent);
+  outline-offset: 2px;
+}
+
+.evi-record-button:disabled,
+.evi-submit-button:disabled,
+.evi-link-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.evi-status {
+  min-height: 20px;
+  margin: 5px 2px 0;
+  color: var(--evi-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.evi-status.is-error {
+  color: var(--evi-danger);
+}
+
+.evi-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 420px) {
+  .evi-preview {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .evi-audio {
+    width: 100%;
+  }
+}
