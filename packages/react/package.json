@@ -26,7 +26,7 @@
   "scripts": {
     "build": "tsup src/index.ts --format esm,cjs --dts --clean --sourcemap --external react",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run src"
+    "test": "vitest run --root ../.. packages/react/src"
   },
   "dependencies": {
     "@editable-voice-input/core": "workspace:*"

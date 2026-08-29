@@ -17,3 +17,5 @@ The server package validates audio signatures, real duration, byte limits, and s
 The provider adapter rejects remote plaintext HTTP, credential-bearing URLs, redirects, and oversized responses. These controls reduce accidental exposure but do not replace egress allowlists when provider URLs are influenced by untrusted configuration.
 
 Provider API keys belong on the server. Never embed them in browser bundles or example configuration committed to source control.
+
+The direct-audio transport is an interface, not an upload server. Host implementations must enforce authentication, ownership, content-type/signature and duration limits, idempotency by `clientMessageId`, malware/content controls appropriate to their product, and separately authorized playback. Prefer short-lived signed playback URLs and never trust client-supplied message metadata as authorization input.

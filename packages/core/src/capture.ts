@@ -77,6 +77,7 @@ class BrowserVoiceCaptureSession implements VoiceCaptureSession {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private cancelled = false;
   private terminalError: VoiceInputError | null = null;
+  private stopRequested = false;
   private settled = false;
 
   constructor(
@@ -112,7 +113,7 @@ class BrowserVoiceCaptureSession implements VoiceCaptureSession {
   }
 
   get active(): boolean {
-    return !this.settled && this.recorder.state !== "inactive";
+    return !this.settled;
   }
 
   stop(): Promise<CapturedAudio> {
@@ -179,9 +180,11 @@ class BrowserVoiceCaptureSession implements VoiceCaptureSession {
   };
 
   private requestStop(): void {
-    if (this.settled) return;
+    if (this.settled || this.stopRequested) return;
+    this.stopRequested = true;
     if (this.recorder.state === "inactive") {
-      this.handleStop();
+      // MediaRecorder changes to inactive before its final dataavailable and
+      // stop events. The stop event is the only safe point to assemble audio.
       return;
     }
     try {

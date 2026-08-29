@@ -25,6 +25,14 @@ const forbiddenEntries = [
   /(?:^|\/)dist\/.*\.test\./,
   /\.(?:wav|mp3|m4a|ogg|webm|flac|bin)$/i
 ];
+const expectedDistEntries = [
+  "package/dist/index.js",
+  "package/dist/index.js.map",
+  "package/dist/index.cjs",
+  "package/dist/index.cjs.map",
+  "package/dist/index.d.ts",
+  "package/dist/index.d.cts"
+];
 const temporaryRoot = mkdtempSync(join(tmpdir(), "editable-voice-input-pack-"));
 const packDirectory = join(temporaryRoot, "packs");
 const consumerDirectory = join(temporaryRoot, "consumer");
@@ -61,10 +69,30 @@ try {
     if (forbidden.length) {
       throw new Error(`${packageName} contains forbidden packed files: ${forbidden.join(", ")}`);
     }
+    const distEntries = listing.filter((path) => path.startsWith("package/dist/"));
+    const duplicateDistEntries = [
+      ...new Set(distEntries.filter((path, index) => distEntries.indexOf(path) !== index))
+    ];
+    if (duplicateDistEntries.length) {
+      throw new Error(
+        `${packageName} contains duplicate dist files: ${duplicateDistEntries.join(", ")}`
+      );
+    }
+    const unexpectedDistEntries = distEntries.filter(
+      (path) => !expectedDistEntries.includes(path)
+    );
+    if (unexpectedDistEntries.length) {
+      throw new Error(
+        `${packageName} contains unexpected dist files: ${unexpectedDistEntries.join(", ")}`
+      );
+    }
+    const missingDistEntries = expectedDistEntries.filter((path) => !distEntries.includes(path));
+    if (missingDistEntries.length) {
+      throw new Error(
+        `${packageName} is missing dist files: ${missingDistEntries.join(", ")}`
+      );
+    }
     for (const required of [
-      "package/dist/index.js",
-      "package/dist/index.cjs",
-      "package/dist/index.d.ts",
       "package/LICENSE",
       "package/README.md"
     ]) {
@@ -132,24 +160,28 @@ if (!existsSync(cssPath)) throw new Error("Missing exported CSS");
 
   writeFileSync(
     join(consumerDirectory, "check-types.ts"),
-    `import { BrowserVoiceCapture, type VoiceInputState } from "@editable-voice-input/core";
-import { EditableVoiceInput, type UseVoiceInputOptions } from "@editable-voice-input/react";
+    `import { BrowserVoiceCapture, BrowserWebSpeechDictationProvider, type DirectAudioUploadTransport, type VoiceInputState } from "@editable-voice-input/core";
+import { EditableVoiceInput, useDirectAudioMessage, useEditableDictation, type UseVoiceInputOptions } from "@editable-voice-input/react";
 import { createTranscriptionHandler, type TranscriptionProvider } from "@editable-voice-input/server";
 import { createOpenAICompatibleProvider } from "@editable-voice-input/provider-openai-compatible";
 void BrowserVoiceCapture; void EditableVoiceInput; void createTranscriptionHandler;
+void BrowserWebSpeechDictationProvider; void useEditableDictation; void useDirectAudioMessage;
 void createOpenAICompatibleProvider; let state: VoiceInputState; let options: UseVoiceInputOptions;
-let provider: TranscriptionProvider; void state!; void options!; void provider!;
+let provider: TranscriptionProvider; let transport: DirectAudioUploadTransport;
+void state!; void options!; void provider!; void transport!;
 `
   );
   writeFileSync(
     join(consumerDirectory, "check-types.cts"),
-    `import { BrowserVoiceCapture, type VoiceInputState } from "@editable-voice-input/core";
-import { EditableVoiceInput, type UseVoiceInputOptions } from "@editable-voice-input/react";
+    `import { BrowserVoiceCapture, BrowserWebSpeechDictationProvider, type DirectAudioUploadTransport, type VoiceInputState } from "@editable-voice-input/core";
+import { EditableVoiceInput, useDirectAudioMessage, useEditableDictation, type UseVoiceInputOptions } from "@editable-voice-input/react";
 import { createTranscriptionHandler, type TranscriptionProvider } from "@editable-voice-input/server";
 import { createOpenAICompatibleProvider } from "@editable-voice-input/provider-openai-compatible";
 void BrowserVoiceCapture; void EditableVoiceInput; void createTranscriptionHandler;
+void BrowserWebSpeechDictationProvider; void useEditableDictation; void useDirectAudioMessage;
 void createOpenAICompatibleProvider; let state: VoiceInputState; let options: UseVoiceInputOptions;
-let provider: TranscriptionProvider; void state!; void options!; void provider!;
+let provider: TranscriptionProvider; let transport: DirectAudioUploadTransport;
+void state!; void options!; void provider!; void transport!;
 `
   );
   writeFileSync(

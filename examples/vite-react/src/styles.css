@@ -9,14 +9,19 @@ body {
   margin: 0;
 }
 
+button,
+textarea {
+  font: inherit;
+}
+
 .example-shell {
-  width: min(100% - 32px, 620px);
+  width: min(100% - 32px, 660px);
   margin: 0 auto;
-  padding: 12vh 0 64px;
+  padding: 10vh 0 64px;
 }
 
 .example-copy {
-  margin: 0 2px 32px;
+  margin: 0 2px 28px;
 }
 
 .example-eyebrow {
@@ -27,7 +32,7 @@ body {
 }
 
 h1 {
-  max-width: 14em;
+  max-width: 15em;
   margin: 10px 0 14px;
   font-size: clamp(28px, 6vw, 42px);
   font-weight: 570;
@@ -35,30 +40,155 @@ h1 {
   line-height: 1.12;
 }
 
-.example-copy > p:last-child {
-  max-width: 38em;
+.example-copy > p:last-child,
+.example-description {
+  max-width: 42em;
   color: #69635c;
   font-size: 15px;
   line-height: 1.7;
 }
 
-.example-composer {
-  --evi-accent: #62594e;
-  --evi-surface: #fbfaf7;
-  --evi-border: #dcd6ce;
+.example-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin-bottom: 10px;
+  padding: 4px;
+  border-radius: 16px;
+  background: #e8e3dc;
 }
 
-.example-result {
-  margin-top: 24px;
-  padding: 0 2px;
+.example-tabs button,
+.example-actions button {
+  min-height: 44px;
+  border: 0;
+  border-radius: 12px;
+  cursor: pointer;
 }
 
+.example-tabs button {
+  color: #676057;
+  background: transparent;
+}
+
+.example-tabs button[aria-selected="true"] {
+  color: #252321;
+  background: #fbfaf7;
+  box-shadow: 0 1px 3px rgb(52 44 35 / 10%);
+}
+
+.example-card {
+  padding: 18px;
+  border: 1px solid #ddd7ce;
+  border-radius: 22px;
+  background: #fbfaf7;
+  box-shadow: 0 14px 40px rgb(65 54 42 / 7%);
+}
+
+.example-card > label,
+.example-suggestion span,
 .example-result span {
   color: #777067;
   font-size: 12px;
 }
 
+.example-card textarea {
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  min-height: 132px;
+  margin-top: 8px;
+  padding: 14px;
+  resize: vertical;
+  border: 1px solid #ddd7ce;
+  border-radius: 16px;
+  color: #252321;
+  background: #ffffff;
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.example-interim {
+  margin: 10px 2px 0;
+  color: #8a8278;
+  font-size: 14px;
+  font-style: italic;
+}
+
+.example-suggestion,
+.example-result {
+  margin-top: 14px;
+  padding: 13px 14px;
+  border-radius: 15px;
+  background: #eee9e2;
+}
+
+.example-suggestion p,
 .example-result p {
   margin: 7px 0 0;
   line-height: 1.65;
+}
+
+.example-card audio,
+.example-result audio {
+  display: block;
+  width: 100%;
+  margin-top: 12px;
+}
+
+.example-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.example-actions button {
+  padding: 0 15px;
+  color: #292622;
+  background: #e8e3dc;
+}
+
+.example-actions button.is-primary {
+  margin-left: auto;
+  color: #fff;
+  background: #62594e;
+}
+
+.example-actions button.is-quiet {
+  color: #6c655d;
+  background: transparent;
+}
+
+.example-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.example-duration,
+.example-status {
+  color: #777067;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.example-status {
+  min-height: 18px;
+  margin: 8px 2px 0;
+}
+
+.example-status.is-error {
+  color: #a64a37;
+}
+
+@media (max-width: 520px) {
+  .example-shell {
+    padding-top: 40px;
+  }
+
+  .example-actions button.is-primary {
+    width: 100%;
+    margin-left: 0;
+  }
 }

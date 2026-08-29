@@ -47,6 +47,39 @@ class FakeMediaRecorder extends EventTarget {
   }
 }
 
+class AsyncStopMediaRecorder extends EventTarget {
+  static latest: AsyncStopMediaRecorder | null = null;
+
+  static isTypeSupported(type: string): boolean {
+    return type === "audio/webm;codecs=opus";
+  }
+
+  readonly mimeType: string;
+  state: RecordingState = "inactive";
+  readonly stop = vi.fn(() => {
+    this.state = "inactive";
+  });
+
+  constructor(_stream: MediaStream, options?: MediaRecorderOptions) {
+    super();
+    this.mimeType = options?.mimeType ?? "audio/webm";
+    AsyncStopMediaRecorder.latest = this;
+  }
+
+  start(): void {
+    this.state = "recording";
+  }
+
+  flushFinalEvents(): void {
+    const dataEvent = new Event("dataavailable") as BlobEvent;
+    Object.defineProperty(dataEvent, "data", {
+      value: new Blob([new Uint8Array([4, 5, 6, 7])], { type: this.mimeType })
+    });
+    this.dispatchEvent(dataEvent);
+    this.dispatchEvent(new Event("stop"));
+  }
+}
+
 describe("MIME negotiation", () => {
   it("selects the first supported browser recording format", () => {
     const isTypeSupported = vi.fn((type: string) => type === "audio/mp4");
@@ -98,6 +131,34 @@ describe("ObjectUrlLease", () => {
 });
 
 describe("BrowserVoiceCapture", () => {
+  it("waits for final dataavailable when stop is requested more than once", async () => {
+    const stopTrack = vi.fn();
+    const stream = { getTracks: () => [{ stop: stopTrack }] } as unknown as MediaStream;
+    const capture = new BrowserVoiceCapture({
+      mediaDevices: { getUserMedia: vi.fn(async () => stream) },
+      MediaRecorderConstructor: AsyncStopMediaRecorder as unknown as typeof MediaRecorder
+    });
+
+    const session = await capture.start();
+    const firstStop = session.stop();
+    const secondStop = session.stop();
+    let completed = false;
+    void firstStop.then(() => {
+      completed = true;
+    });
+    await Promise.resolve();
+
+    expect(firstStop).toBe(secondStop);
+    expect(AsyncStopMediaRecorder.latest!.stop).toHaveBeenCalledOnce();
+    expect(completed).toBe(false);
+    expect(session.active).toBe(true);
+    await expect(capture.start()).rejects.toMatchObject({ code: "recording-failed" });
+
+    AsyncStopMediaRecorder.latest!.flushFinalEvents();
+    await expect(firstStop).resolves.toMatchObject({ size: 4 });
+    expect(stopTrack).toHaveBeenCalledOnce();
+  });
+
   it("returns an in-memory Blob and releases microphone tracks", async () => {
     const stopTrack = vi.fn();
     const stream = {

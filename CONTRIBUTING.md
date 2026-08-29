@@ -11,6 +11,8 @@ Thanks for helping improve Editable Voice Input.
 ## Product invariants
 
 - Transcription creates an editable draft; it must not auto-submit.
+- Streaming interim text must not overwrite the editable value, and batch fallback must preserve user edits.
+- Direct audio upload must remain transport-neutral, single-flight, and explicit unless an integration opts into stop-to-send.
 - Capture is temporary by default and must be cleaned up on cancel and unmount.
 - Provider credentials stay server-side.
 - Public APIs remain provider-neutral except inside provider adapter packages.

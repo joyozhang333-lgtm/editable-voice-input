@@ -13,12 +13,9 @@ import {
   type VoiceSubmission
 } from "@editable-voice-input/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { VoiceCaptureController } from "./capture-controller";
 
-export interface VoiceCaptureController {
-  start(): Promise<VoiceCaptureSession>;
-  cancel(): void;
-  dispose(): void;
-}
+export type { VoiceCaptureController } from "./capture-controller";
 
 export interface UseVoiceInputOptions {
   value?: string;

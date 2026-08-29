@@ -7,8 +7,11 @@ const textExtensions = new Set([
   "",
   ".css",
   ".html",
+  ".js",
   ".json",
   ".md",
+  ".cjs",
+  ".map",
   ".mjs",
   ".ts",
   ".tsx",
@@ -18,11 +21,12 @@ const textExtensions = new Set([
 const patterns = [
   ["private key", /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/],
   ["cloud access key", /AKIA[0-9A-Z]{16}/],
+  ["Tencent Cloud access key", /\bAKID[A-Za-z0-9]{32}\b/],
   ["GitHub token", /gh[pousr]_[A-Za-z0-9_]{30,}/],
   ["provider token", /\bsk-[A-Za-z0-9_-]{20,}\b/],
   [
     "assigned secret",
-    /(?:API_KEY|ACCESS_TOKEN|AUTH_TOKEN|CLIENT_SECRET|PASSWORD)\s*=\s*["']?[^\s"']{12,}/i
+    /(?:API_KEY|ACCESS_TOKEN|AUTH_TOKEN|CLIENT_SECRET|PASSWORD)[ \t]*=[ \t]*["']?[^\s"']{12,}/i
   ]
 ];
 const forbiddenBinaryExtensions = new Set([
@@ -51,7 +55,14 @@ function visit(directory) {
       findings.push(`${path}: bundled audio or model artifact`);
       continue;
     }
-    if (!textExtensions.has(extension) || statSync(absolute).size > 1_000_000) continue;
+    const isEnvironmentExample = entry.name.endsWith(".env.example");
+    const maximumTextBytes = extension === ".map" ? 10_000_000 : 1_000_000;
+    if (
+      (!textExtensions.has(extension) && !isEnvironmentExample) ||
+      statSync(absolute).size > maximumTextBytes
+    ) {
+      continue;
+    }
     const content = readFileSync(absolute, "utf8");
     for (const [label, pattern] of patterns) {
       if (pattern.test(content)) findings.push(`${path}: ${label}`);
