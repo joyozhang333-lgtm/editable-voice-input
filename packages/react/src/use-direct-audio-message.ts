@@ -2,6 +2,7 @@ import {
   BrowserVoiceCapture,
   ObjectUrlLease,
   VoiceInputError,
+  createStableClientTurnId,
   uploadDirectAudioMessage,
   type CapturedAudio,
   type DirectAudioMessage,
@@ -28,7 +29,9 @@ export interface UseDirectAudioMessageOptions {
   uploadOnStop?: boolean;
   createClientMessageId?: () => string;
   onAudioReady?: (audio: CapturedAudio | null) => void;
-  onMessage?: (message: DirectAudioMessage) => void;
+  onMessage?: (message: DirectAudioMessage) => void | Promise<void>;
+  /** Reports host callback failures without rolling back an already-sent message. */
+  onCallbackError?: (error: Error) => void | Promise<void>;
   captureOptions?: VoiceCaptureOptions;
   capture?: VoiceCaptureController;
 }
@@ -36,6 +39,7 @@ export interface UseDirectAudioMessageOptions {
 export interface UseDirectAudioMessageResult {
   state: DirectAudioMessageState;
   error: VoiceInputError | null;
+  callbackError: Error | null;
   elapsedMs: number;
   audio: CapturedAudio | null;
   audioUrl: string | null;
@@ -45,26 +49,6 @@ export interface UseDirectAudioMessageResult {
   send(): Promise<void>;
   cancel(): void;
   clear(): void;
-}
-
-let fallbackMessageCounter = 0;
-
-function defaultClientMessageId(): string {
-  const browserCrypto = globalThis.crypto;
-  if (typeof browserCrypto?.randomUUID === "function") {
-    return browserCrypto.randomUUID();
-  }
-  if (typeof browserCrypto?.getRandomValues === "function") {
-    const bytes = browserCrypto.getRandomValues(new Uint8Array(16));
-    bytes[6] = (bytes[6]! & 0x0f) | 0x40;
-    bytes[8] = (bytes[8]! & 0x3f) | 0x80;
-    const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0"));
-    return `${hex.slice(0, 4).join("")}-${hex.slice(4, 6).join("")}-${hex
-      .slice(6, 8)
-      .join("")}-${hex.slice(8, 10).join("")}-${hex.slice(10).join("")}`;
-  }
-  fallbackMessageCounter += 1;
-  return `voice-${Date.now().toString(36)}-${fallbackMessageCounter.toString(36)}`;
 }
 
 function asCaptureError(error: unknown): VoiceInputError {
@@ -86,11 +70,13 @@ export function useDirectAudioMessage(
   optionsRef.current = options;
   const [state, setState] = useState<DirectAudioMessageState>("idle");
   const [error, setError] = useState<VoiceInputError | null>(null);
+  const [callbackError, setCallbackError] = useState<Error | null>(null);
   const [elapsedMs, setElapsedMs] = useState(0);
   const [audio, setAudio] = useState<CapturedAudio | null>(null);
   const audioRef = useRef<CapturedAudio | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [message, setMessage] = useState<DirectAudioMessage | null>(null);
+  const messageRef = useRef<DirectAudioMessage | null>(null);
   const captureRef = useRef<VoiceCaptureController | null>(null);
   if (!captureRef.current) {
     captureRef.current = options.capture ?? new BrowserVoiceCapture(options.captureOptions);
@@ -126,7 +112,13 @@ export function useDirectAudioMessage(
   );
 
   uploadRef.current = async (captured, operationId) => {
-    if (activeUploadAttemptRef.current !== null || operationId !== operationIdRef.current) return;
+    if (
+      activeUploadAttemptRef.current !== null ||
+      operationId !== operationIdRef.current ||
+      messageRef.current
+    ) {
+      return;
+    }
     const uploadAttemptId = uploadAttemptIdRef.current + 1;
     uploadAttemptIdRef.current = uploadAttemptId;
     activeUploadAttemptRef.current = uploadAttemptId;
@@ -137,7 +129,7 @@ export function useDirectAudioMessage(
     const currentOptions = optionsRef.current;
     const clientMessageId =
       clientMessageIdRef.current ??
-      (currentOptions.createClientMessageId ?? defaultClientMessageId)();
+      (currentOptions.createClientMessageId ?? createStableClientTurnId)();
     clientMessageIdRef.current = clientMessageId;
 
     try {
@@ -148,10 +140,21 @@ export function useDirectAudioMessage(
         signal: controller.signal
       });
       if (operationId !== operationIdRef.current) return;
-      currentOptions.onMessage?.(uploaded);
-      if (operationId !== operationIdRef.current) return;
+      messageRef.current = uploaded;
       setMessage(uploaded);
       setState("sent");
+      try {
+        await currentOptions.onMessage?.(uploaded);
+      } catch (caught) {
+        const callbackFailure =
+          caught instanceof Error ? caught : new Error("Host onMessage callback failed.");
+        if (operationId === operationIdRef.current) setCallbackError(callbackFailure);
+        try {
+          await currentOptions.onCallbackError?.(callbackFailure);
+        } catch {
+          // A second host callback cannot change the confirmed transport receipt.
+        }
+      }
     } catch (caught) {
       if (operationId !== operationIdRef.current || controller.signal.aborted) return;
       setError(asUploadError(caught));
@@ -169,12 +172,19 @@ export function useDirectAudioMessage(
       if (operationId !== operationIdRef.current) return;
       stopTimer();
       sessionRef.current = null;
+      messageRef.current = null;
+      setMessage(null);
       replaceAudio(captured);
       clientMessageIdRef.current =
-        (optionsRef.current.createClientMessageId ?? defaultClientMessageId)();
+        (optionsRef.current.createClientMessageId ?? createStableClientTurnId)();
       setError(null);
+      setCallbackError(null);
       setState("ready");
-      if (optionsRef.current.uploadOnStop) {
+      if (
+        optionsRef.current.uploadOnStop &&
+        (captured.terminationReason === undefined ||
+          captured.terminationReason === "user-stop")
+      ) {
         void uploadRef.current(captured, operationId);
       }
     },
@@ -188,7 +198,7 @@ export function useDirectAudioMessage(
       sessionRef.current = null;
       const nextError = asCaptureError(caught);
       if (nextError.code === "capture-cancelled") {
-        setState("idle");
+        setState(messageRef.current ? "sent" : audioRef.current ? "ready" : "idle");
         return;
       }
       setError(nextError);
@@ -213,10 +223,8 @@ export function useDirectAudioMessage(
     operationIdRef.current = operationId;
     abortRef.current?.abort();
     activeUploadAttemptRef.current = null;
-    clientMessageIdRef.current = null;
-    replaceAudio(null);
-    setMessage(null);
     setError(null);
+    setCallbackError(null);
     setElapsedMs(0);
     setState("requesting-permission");
 
@@ -256,6 +264,7 @@ export function useDirectAudioMessage(
   }, [stopTimer]);
 
   const send = useCallback(async () => {
+    if (startInFlightRef.current || sessionRef.current?.active) return;
     const captured = audioRef.current;
     if (!captured) return;
     await uploadRef.current(captured, operationIdRef.current);
@@ -273,9 +282,11 @@ export function useDirectAudioMessage(
     sessionRef.current = null;
     clientMessageIdRef.current = null;
     replaceAudio(null);
+    messageRef.current = null;
     setMessage(null);
     setElapsedMs(0);
     setError(null);
+    setCallbackError(null);
     setState("idle");
   }, [replaceAudio, stopTimer]);
 
@@ -296,6 +307,7 @@ export function useDirectAudioMessage(
   return {
     state,
     error,
+    callbackError,
     elapsedMs,
     audio,
     audioUrl,

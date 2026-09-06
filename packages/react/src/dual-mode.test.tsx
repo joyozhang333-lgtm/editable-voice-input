@@ -1,17 +1,20 @@
 // @vitest-environment jsdom
 
-import type {
-  CapturedAudio,
-  DictationProvider,
-  DictationProviderStartInput,
-  DictationProviderSession,
-  DirectAudioUploadTransport,
-  VoiceCaptureSession
+import {
+  VoiceInputError,
+  type CapturedAudio,
+  type DictationProvider,
+  type DictationProviderStartInput,
+  type DictationProviderSession,
+  type DirectAudioUploadTransport,
+  type VoiceCaptureSession
 } from "@editable-voice-input/core";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  DualModeVoiceInput,
   useDirectAudioMessage,
+  useDualModeVoiceInput,
   useEditableDictation,
   type VoiceCaptureController
 } from "./index";
@@ -114,7 +117,10 @@ beforeEach(() => {
   });
 });
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  Reflect.deleteProperty(globalThis, "SpeechRecognition");
+});
 
 describe("useEditableDictation", () => {
   it("cancels pending microphone permission and can retry immediately", async () => {
@@ -220,6 +226,267 @@ describe("useEditableDictation", () => {
     );
     expect(screen.getByLabelText("suggestion").textContent).toBe("authoritative wording");
   });
+
+  it("keeps recording in batch-only mode when live recognition cannot start", async () => {
+    const { capture } = makeCapture();
+    const provider: DictationProvider = {
+      start: vi.fn(async () => {
+        throw new Error("synthetic live recognition unavailable");
+      })
+    };
+    const transcribe = vi.fn(async () => ({ text: "batch transcript" }));
+
+    function Harness() {
+      const voice = useEditableDictation({
+        provider,
+        capture,
+        authoritativeTranscribe: transcribe
+      });
+      return (
+        <div>
+          <output aria-label="fallback-state">{voice.state}</output>
+          <output aria-label="fallback-mode">{voice.recognitionMode}</output>
+          <output aria-label="fallback-live-error">{voice.liveError?.code}</output>
+          <output aria-label="fallback-value">{voice.value}</output>
+          <button type="button" onClick={() => void voice.startDictation()}>
+            fallback-start
+          </button>
+          <button type="button" onClick={voice.stopDictation}>
+            fallback-stop
+          </button>
+        </div>
+      );
+    }
+
+    render(<Harness />);
+    fireEvent.click(screen.getByRole("button", { name: "fallback-start" }));
+    await waitFor(() =>
+      expect(screen.getByLabelText("fallback-state").textContent).toBe("listening")
+    );
+    expect(screen.getByLabelText("fallback-mode").textContent).toBe("batch-only");
+    expect(screen.getByLabelText("fallback-live-error").textContent).toBe(
+      "transcription-failed"
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "fallback-stop" }));
+    await waitFor(() =>
+      expect(screen.getByLabelText("fallback-state").textContent).toBe("review")
+    );
+    expect(screen.getByLabelText("fallback-value").textContent).toBe("batch transcript");
+  });
+
+  it("does not start browser Web Speech unless the host explicitly opts in", async () => {
+    const { capture } = makeCapture();
+    const recognitionStart = vi.fn();
+    class BrowserRecognition {
+      continuous = false;
+      interimResults = false;
+      lang = "";
+      onresult = null;
+      onerror = null;
+      onend = null;
+      start = recognitionStart;
+      stop = vi.fn();
+      abort = vi.fn();
+    }
+    Object.defineProperty(globalThis, "SpeechRecognition", {
+      configurable: true,
+      value: BrowserRecognition
+    });
+
+    function Harness() {
+      const voice = useEditableDictation({
+        capture,
+        authoritativeTranscribe: async () => ({ text: "batch only" })
+      });
+      return (
+        <div>
+          <output aria-label="opt-in-state">{voice.state}</output>
+          <output aria-label="opt-in-mode">{voice.recognitionMode}</output>
+          <button type="button" onClick={() => void voice.startDictation()}>
+            opt-in-start
+          </button>
+        </div>
+      );
+    }
+
+    render(<Harness />);
+    fireEvent.click(screen.getByRole("button", { name: "opt-in-start" }));
+    await waitFor(() =>
+      expect(screen.getByLabelText("opt-in-state").textContent).toBe("listening")
+    );
+    expect(screen.getByLabelText("opt-in-mode").textContent).toBe("batch-only");
+    expect(recognitionStart).not.toHaveBeenCalled();
+    Reflect.deleteProperty(globalThis, "SpeechRecognition");
+  });
+
+  it("cancels a provider that resolves after capture already finalized", async () => {
+    const captured = deferred<CapturedAudio>();
+    const captureSession: VoiceCaptureSession = {
+      active: true,
+      result: captured.promise,
+      stop: vi.fn(() => captured.promise),
+      cancel: vi.fn()
+    };
+    const capture: VoiceCaptureController = {
+      start: vi.fn(async () => captureSession),
+      cancel: vi.fn(),
+      dispose: vi.fn()
+    };
+    const providerStart = deferred<DictationProviderSession>();
+    const lateSession: DictationProviderSession = {
+      active: true,
+      result: new Promise<void>(() => undefined),
+      stop: vi.fn(() => new Promise<void>(() => undefined)),
+      cancel: vi.fn()
+    };
+    const provider: DictationProvider = { start: vi.fn(() => providerStart.promise) };
+
+    function Harness() {
+      const voice = useEditableDictation({
+        capture,
+        provider,
+        authoritativeTranscribe: async () => ({ text: "finalized batch" })
+      });
+      return (
+        <div>
+          <output aria-label="late-provider-state">{voice.state}</output>
+          <output aria-label="late-provider-value">{voice.value}</output>
+          <button type="button" onClick={() => void voice.startDictation()}>
+            late-provider-start
+          </button>
+        </div>
+      );
+    }
+
+    render(<Harness />);
+    fireEvent.click(screen.getByRole("button", { name: "late-provider-start" }));
+    captured.resolve({ ...audio, terminationReason: "max-duration" });
+    await waitFor(() =>
+      expect(screen.getByLabelText("late-provider-state").textContent).toBe("review")
+    );
+    providerStart.resolve(lateSession);
+    await waitFor(() => expect(lateSession.cancel).toHaveBeenCalledOnce());
+    expect(screen.getByLabelText("late-provider-state").textContent).toBe("review");
+    expect(screen.getByLabelText("late-provider-value").textContent).toBe("finalized batch");
+  });
+
+  it("reconciles a late batch transcript against edits made while transcribing", async () => {
+    const { capture } = makeCapture();
+    const transcript = deferred<{ text: string }>();
+
+    function Harness() {
+      const voice = useEditableDictation({
+        defaultValue: "starting thought",
+        capture,
+        authoritativeTranscribe: () => transcript.promise
+      });
+      return (
+        <div>
+          <textarea
+            aria-label="late-batch-draft"
+            value={voice.value}
+            onChange={(event) => voice.setValue(event.currentTarget.value)}
+          />
+          <output aria-label="late-batch-state">{voice.state}</output>
+          <output aria-label="late-batch-suggestion">{voice.authoritativeSuggestion}</output>
+          <button type="button" onClick={() => void voice.startDictation()}>
+            late-batch-start
+          </button>
+          <button type="button" onClick={voice.stopDictation}>
+            late-batch-stop
+          </button>
+        </div>
+      );
+    }
+
+    render(<Harness />);
+    fireEvent.click(screen.getByRole("button", { name: "late-batch-start" }));
+    await waitFor(() =>
+      expect(screen.getByLabelText("late-batch-state").textContent).toBe("listening")
+    );
+    fireEvent.click(screen.getByRole("button", { name: "late-batch-stop" }));
+    await waitFor(() =>
+      expect(screen.getByLabelText("late-batch-state").textContent).toBe("transcribing")
+    );
+    fireEvent.change(screen.getByLabelText("late-batch-draft"), {
+      target: { value: "edit made during transcription" }
+    });
+    transcript.resolve({ text: "authoritative late transcript" });
+
+    await waitFor(() =>
+      expect(screen.getByLabelText("late-batch-state").textContent).toBe("review")
+    );
+    expect((screen.getByLabelText("late-batch-draft") as HTMLTextAreaElement).value).toBe(
+      "edit made during transcription"
+    );
+    expect(screen.getByLabelText("late-batch-suggestion").textContent).toBe(
+      "authoritative late transcript"
+    );
+  });
+
+  it("aborts pending provider startup after a fatal capture failure", async () => {
+    const captured = deferred<CapturedAudio>();
+    const providerStart = deferred<DictationProviderSession>();
+    let providerInput: DictationProviderStartInput | null = null;
+    const lateSession: DictationProviderSession = {
+      active: true,
+      result: new Promise<void>(() => undefined),
+      stop: vi.fn(() => new Promise<void>(() => undefined)),
+      cancel: vi.fn()
+    };
+    const captureSession: VoiceCaptureSession = {
+      active: true,
+      result: captured.promise,
+      stop: vi.fn(() => captured.promise),
+      cancel: vi.fn()
+    };
+    const capture: VoiceCaptureController = {
+      start: vi.fn(async () => captureSession),
+      cancel: vi.fn(),
+      dispose: vi.fn()
+    };
+    const provider: DictationProvider = {
+      start: vi.fn((input) => {
+        providerInput = input;
+        return providerStart.promise;
+      })
+    };
+
+    function Harness() {
+      const voice = useEditableDictation({
+        defaultValue: "protected value",
+        capture,
+        provider,
+        authoritativeTranscribe: vi.fn()
+      });
+      return (
+        <div>
+          <output aria-label="capture-failure-state">{voice.state}</output>
+          <output aria-label="capture-failure-value">{voice.value}</output>
+          <button type="button" onClick={() => void voice.startDictation()}>
+            capture-failure-start
+          </button>
+        </div>
+      );
+    }
+
+    render(<Harness />);
+    fireEvent.click(screen.getByRole("button", { name: "capture-failure-start" }));
+    await waitFor(() => expect(providerInput).not.toBeNull());
+    captured.reject(new Error("synthetic capture failure"));
+    await waitFor(() =>
+      expect(screen.getByLabelText("capture-failure-state").textContent).toBe("error")
+    );
+    expect(providerInput!.signal?.aborted).toBe(true);
+    providerInput!.onResult({ transcript: "must not be applied", isFinal: true });
+    expect(screen.getByLabelText("capture-failure-value").textContent).toBe(
+      "protected value"
+    );
+
+    providerStart.resolve(lateSession);
+    await waitFor(() => expect(lateSession.cancel).toHaveBeenCalledOnce());
+  });
 });
 
 describe("useDirectAudioMessage", () => {
@@ -287,6 +554,61 @@ describe("useDirectAudioMessage", () => {
     render(<Harness />);
     fireEvent.click(screen.getByRole("button", { name: "double-record" }));
     await waitFor(() => expect(capture.start).toHaveBeenCalledOnce());
+  });
+
+  it("keeps the existing unsent recording when a re-record start fails", async () => {
+    const first = makeCapture();
+    const capture: VoiceCaptureController = {
+      start: vi
+        .fn<VoiceCaptureController["start"]>()
+        .mockResolvedValueOnce(first.session)
+        .mockRejectedValueOnce(
+          new VoiceInputError("permission-denied", "Synthetic permission denial.")
+        ),
+      cancel: vi.fn(),
+      dispose: vi.fn()
+    };
+
+    function Harness() {
+      const voice = useDirectAudioMessage({
+        capture,
+        transport: { upload: vi.fn() }
+      });
+      return (
+        <div>
+          <output aria-label="rerecord-state">{voice.state}</output>
+          <output aria-label="rerecord-size">{voice.audio?.size}</output>
+          <output aria-label="rerecord-url">{voice.audioUrl}</output>
+          <output aria-label="rerecord-error">{voice.error?.code}</output>
+          <button type="button" onClick={() => void voice.startRecording()}>
+            rerecord-start
+          </button>
+          <button type="button" onClick={voice.stopRecording}>
+            rerecord-stop
+          </button>
+        </div>
+      );
+    }
+
+    render(<Harness />);
+    fireEvent.click(screen.getByRole("button", { name: "rerecord-start" }));
+    await waitFor(() =>
+      expect(screen.getByLabelText("rerecord-state").textContent).toBe("recording")
+    );
+    fireEvent.click(screen.getByRole("button", { name: "rerecord-stop" }));
+    await waitFor(() =>
+      expect(screen.getByLabelText("rerecord-state").textContent).toBe("ready")
+    );
+    const preservedUrl = screen.getByLabelText("rerecord-url").textContent;
+
+    fireEvent.click(screen.getByRole("button", { name: "rerecord-start" }));
+    await waitFor(() =>
+      expect(screen.getByLabelText("rerecord-state").textContent).toBe("error")
+    );
+    expect(screen.getByLabelText("rerecord-error").textContent).toBe("permission-denied");
+    expect(screen.getByLabelText("rerecord-size").textContent).toBe(String(audio.size));
+    expect(screen.getByLabelText("rerecord-url").textContent).toBe(preservedUrl);
+    expect(URL.revokeObjectURL).not.toHaveBeenCalled();
   });
 
   it("uploads a captured recording once and exposes playable server metadata", async () => {
@@ -393,6 +715,45 @@ describe("useDirectAudioMessage", () => {
     expect(transport.upload).toHaveBeenCalledOnce();
   });
 
+  it("does not auto-upload audio stopped by page lifecycle", async () => {
+    const completion = deferred<CapturedAudio>();
+    const session: VoiceCaptureSession = {
+      active: true,
+      result: completion.promise,
+      stop: vi.fn(() => completion.promise),
+      cancel: vi.fn()
+    };
+    const capture: VoiceCaptureController = {
+      start: vi.fn(async () => session),
+      cancel: vi.fn(),
+      dispose: vi.fn()
+    };
+    const transport: DirectAudioUploadTransport = { upload: vi.fn() };
+
+    function Harness() {
+      const voice = useDirectAudioMessage({ capture, transport, uploadOnStop: true });
+      return (
+        <div>
+          <output aria-label="lifecycle-audio-state">{voice.state}</output>
+          <button type="button" onClick={() => void voice.startRecording()}>
+            lifecycle-audio-start
+          </button>
+        </div>
+      );
+    }
+
+    render(<Harness />);
+    fireEvent.click(screen.getByRole("button", { name: "lifecycle-audio-start" }));
+    await waitFor(() =>
+      expect(screen.getByLabelText("lifecycle-audio-state").textContent).toBe("recording")
+    );
+    completion.resolve({ ...audio, terminationReason: "page-hidden" });
+    await waitFor(() =>
+      expect(screen.getByLabelText("lifecycle-audio-state").textContent).toBe("ready")
+    );
+    expect(transport.upload).not.toHaveBeenCalled();
+  });
+
   it("does not write sent after onMessage clears reentrantly", async () => {
     const { capture } = makeCapture();
     let clearCurrent: () => void = () => undefined;
@@ -446,7 +807,7 @@ describe("useDirectAudioMessage", () => {
     expect(screen.getByLabelText("reentrant-message").textContent).toBe("");
   });
 
-  it("keeps an onMessage exception in error state without exposing a message", async () => {
+  it("keeps a confirmed sent receipt when the host onMessage callback throws", async () => {
     const { capture } = makeCapture();
     const transport: DirectAudioUploadTransport = {
       upload: vi.fn(async ({ audio: captured, clientMessageId }) => ({
@@ -475,6 +836,7 @@ describe("useDirectAudioMessage", () => {
         <div>
           <output aria-label="callback-error-state">{voice.state}</output>
           <output aria-label="callback-error-message">{voice.message?.id}</output>
+          <output aria-label="callback-host-error">{voice.callbackError?.message}</output>
           <button type="button" onClick={() => void voice.startRecording()}>
             callback-error-record
           </button>
@@ -500,8 +862,152 @@ describe("useDirectAudioMessage", () => {
     fireEvent.click(screen.getByRole("button", { name: "callback-error-send" }));
 
     await waitFor(() =>
-      expect(screen.getByLabelText("callback-error-state").textContent).toBe("error")
+      expect(screen.getByLabelText("callback-error-state").textContent).toBe("sent")
     );
-    expect(screen.getByLabelText("callback-error-message").textContent).toBe("");
+    expect(screen.getByLabelText("callback-error-message").textContent).toBe(
+      "callback-error-message"
+    );
+    expect(screen.getByLabelText("callback-host-error").textContent).toBe(
+      "host callback failed"
+    );
+    fireEvent.click(screen.getByRole("button", { name: "callback-error-send" }));
+    expect(transport.upload).toHaveBeenCalledOnce();
+  });
+
+  it("contains rejected async host callbacks after a confirmed send", async () => {
+    const { capture } = makeCapture();
+    const onCallbackError = vi.fn(async () => {
+      throw new Error("secondary callback rejection");
+    });
+    const transport: DirectAudioUploadTransport = {
+      upload: vi.fn(async ({ audio: captured, clientMessageId }) => ({
+        id: "async-callback-message",
+        clientMessageId,
+        kind: "audio" as const,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        audio: {
+          url: "https://media.example.test/audio/async-callback.webm",
+          mimeType: captured.mimeType,
+          durationMs: captured.durationMs,
+          size: captured.size
+        }
+      }))
+    };
+
+    function Harness() {
+      const voice = useDirectAudioMessage({
+        capture,
+        transport,
+        onMessage: async () => {
+          throw new Error("async host callback failed");
+        },
+        onCallbackError
+      });
+      return (
+        <div>
+          <output aria-label="async-callback-state">{voice.state}</output>
+          <output aria-label="async-callback-error">{voice.callbackError?.message}</output>
+          <button type="button" onClick={() => void voice.startRecording()}>
+            async-callback-record
+          </button>
+          <button type="button" onClick={voice.stopRecording}>
+            async-callback-stop
+          </button>
+          <button type="button" onClick={() => void voice.send()}>
+            async-callback-send
+          </button>
+        </div>
+      );
+    }
+
+    render(<Harness />);
+    fireEvent.click(screen.getByRole("button", { name: "async-callback-record" }));
+    await waitFor(() =>
+      expect(screen.getByLabelText("async-callback-state").textContent).toBe("recording")
+    );
+    fireEvent.click(screen.getByRole("button", { name: "async-callback-stop" }));
+    await waitFor(() =>
+      expect(screen.getByLabelText("async-callback-state").textContent).toBe("ready")
+    );
+    fireEvent.click(screen.getByRole("button", { name: "async-callback-send" }));
+
+    await waitFor(() =>
+      expect(screen.getByLabelText("async-callback-error").textContent).toBe(
+        "async host callback failed"
+      )
+    );
+    expect(screen.getByLabelText("async-callback-state").textContent).toBe("sent");
+    expect(onCallbackError).toHaveBeenCalledOnce();
+  });
+});
+
+describe("DualModeVoiceInput", () => {
+  it("serializes same-tick headless starts so only one microphone mode begins", async () => {
+    const dictationCapture = makeCapture().capture;
+    const directCapture = makeCapture().capture;
+
+    function Harness() {
+      const voice = useDualModeVoiceInput({
+        dictation: {
+          capture: dictationCapture,
+          authoritativeTranscribe: async () => ({ text: "synthetic transcript" })
+        },
+        directAudio: {
+          capture: directCapture,
+          transport: { upload: vi.fn() }
+        }
+      });
+      return (
+        <div>
+          <output aria-label="headless-mode">{voice.mode}</output>
+          <button
+            type="button"
+            onClick={() => {
+              void voice.dictation.startDictation();
+              void voice.directAudio.startRecording();
+            }}
+          >
+            concurrent-headless-start
+          </button>
+          <button type="button" onClick={voice.dictation.cancel}>
+            cancel-headless
+          </button>
+        </div>
+      );
+    }
+
+    render(<Harness />);
+    fireEvent.click(screen.getByRole("button", { name: "concurrent-headless-start" }));
+    await waitFor(() => expect(dictationCapture.start).toHaveBeenCalledOnce());
+    expect(directCapture.start).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("headless-mode").textContent).toBe("dictation");
+    fireEvent.click(screen.getByRole("button", { name: "cancel-headless" }));
+  });
+
+  it("exposes keyboard-operable tabs for both voice contracts", async () => {
+    const dictationCapture = makeCapture().capture;
+    const directCapture = makeCapture().capture;
+    render(
+      <DualModeVoiceInput
+        dictation={{
+          capture: dictationCapture,
+          authoritativeTranscribe: async () => ({ text: "synthetic transcript" })
+        }}
+        directAudio={{
+          capture: directCapture,
+          transport: { upload: vi.fn() }
+        }}
+      />
+    );
+    const editTab = screen.getByRole("tab", { name: "Edit text" });
+    const audioTab = screen.getByRole("tab", { name: "Send recording" });
+    expect(editTab.getAttribute("aria-selected")).toBe("true");
+    fireEvent.keyDown(editTab, { key: "ArrowRight" });
+    await waitFor(() => expect(audioTab.getAttribute("aria-selected")).toBe("true"));
+    await waitFor(() => expect(document.activeElement).toBe(audioTab));
+    fireEvent.click(screen.getByRole("button", { name: "Record" }));
+    await waitFor(() => expect(screen.getByRole("status").textContent).toBe("Recording"));
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   });
 });

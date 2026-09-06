@@ -1,5 +1,9 @@
 import { chooseRecordingMimeType } from "./mime";
-import { VoiceInputError, type CapturedAudio } from "./types";
+import {
+  VoiceInputError,
+  type CapturedAudio,
+  type CaptureTerminationReason
+} from "./types";
 
 export const DEFAULT_MAX_DURATION_MS = 120_000;
 export const DEFAULT_MAX_BYTES = 8 * 1024 * 1024;
@@ -12,6 +16,15 @@ export interface VoiceCaptureOptions {
   mediaDevices?: Pick<MediaDevices, "getUserMedia">;
   MediaRecorderConstructor?: typeof MediaRecorder;
   now?: () => number;
+  /** Event target used for `pagehide`; injectable for tests and non-window hosts. */
+  pageLifecycleTarget?: Pick<EventTarget, "addEventListener" | "removeEventListener">;
+  /** Document-like visibility source; recording is safely stopped when it becomes hidden. */
+  visibilityDocument?: Pick<
+    Document,
+    "visibilityState" | "addEventListener" | "removeEventListener"
+  >;
+  stopOnPageHide?: boolean;
+  stopOnHidden?: boolean;
 }
 
 export interface VoiceCaptureSession {
@@ -25,6 +38,17 @@ interface Deferred<T> {
   promise: Promise<T>;
   resolve(value: T): void;
   reject(error: unknown): void;
+}
+
+interface BrowserVoiceCaptureSessionOptions {
+  maxDurationMs: number;
+  maxBytes: number;
+  timesliceMs: number;
+  now: () => number;
+  pageLifecycleTarget?: VoiceCaptureOptions["pageLifecycleTarget"];
+  visibilityDocument?: VoiceCaptureOptions["visibilityDocument"];
+  stopOnPageHide: boolean;
+  stopOnHidden: boolean;
 }
 
 function deferred<T>(): Deferred<T> {
@@ -71,6 +95,9 @@ class BrowserVoiceCaptureSession implements VoiceCaptureSession {
   private readonly startedAt: number;
   private readonly now: () => number;
   private readonly maxBytes: number;
+  private readonly pageLifecycleTarget?: VoiceCaptureOptions["pageLifecycleTarget"];
+  private readonly visibilityDocument?: VoiceCaptureOptions["visibilityDocument"];
+  private readonly tracks: MediaStreamTrack[];
   private readonly completion = deferred<CapturedAudio>();
   private readonly chunks: Blob[] = [];
   private bytes = 0;
@@ -79,28 +106,39 @@ class BrowserVoiceCaptureSession implements VoiceCaptureSession {
   private terminalError: VoiceInputError | null = null;
   private stopRequested = false;
   private settled = false;
+  private terminationReason: CaptureTerminationReason = "user-stop";
 
   constructor(
     recorder: MediaRecorder,
     stream: MediaStream,
-    options: Required<Pick<VoiceCaptureOptions, "maxDurationMs" | "maxBytes" | "timesliceMs">> & {
-      now: () => number;
-    }
+    options: BrowserVoiceCaptureSessionOptions
   ) {
     this.recorder = recorder;
     this.stream = stream;
     this.now = options.now;
     this.maxBytes = options.maxBytes;
     this.startedAt = this.now();
+    this.pageLifecycleTarget = options.pageLifecycleTarget;
+    this.visibilityDocument = options.visibilityDocument;
+    this.tracks = stream.getTracks();
 
     recorder.addEventListener("dataavailable", this.handleData);
     recorder.addEventListener("error", this.handleError);
     recorder.addEventListener("stop", this.handleStop, { once: true });
+    for (const track of this.tracks) {
+      track.addEventListener?.("ended", this.handleTrackEnded);
+    }
+    if (options.stopOnPageHide) {
+      this.pageLifecycleTarget?.addEventListener("pagehide", this.handlePageHide);
+    }
+    if (options.stopOnHidden) {
+      this.visibilityDocument?.addEventListener("visibilitychange", this.handleVisibilityChange);
+    }
 
     try {
       recorder.start(options.timesliceMs);
       this.timer = setTimeout(() => {
-        this.requestStop();
+        this.requestStop("max-duration");
       }, options.maxDurationMs);
     } catch (error) {
       this.cleanup();
@@ -117,14 +155,14 @@ class BrowserVoiceCaptureSession implements VoiceCaptureSession {
   }
 
   stop(): Promise<CapturedAudio> {
-    this.requestStop();
+    this.requestStop("user-stop");
     return this.result;
   }
 
   cancel(): void {
     if (this.settled) return;
     this.cancelled = true;
-    this.requestStop();
+    this.requestStop("user-stop");
   }
 
   private readonly handleData = (event: BlobEvent): void => {
@@ -136,7 +174,7 @@ class BrowserVoiceCaptureSession implements VoiceCaptureSession {
         `Recording exceeded ${this.maxBytes} bytes.`
       );
       this.chunks.length = 0;
-      this.requestStop();
+      this.requestStop("user-stop");
       return;
     }
     this.chunks.push(event.data);
@@ -147,7 +185,21 @@ class BrowserVoiceCaptureSession implements VoiceCaptureSession {
     this.terminalError = new VoiceInputError("recording-failed", "Voice recording failed.", {
       cause: mediaEvent.error ?? event
     });
-    this.requestStop();
+    this.requestStop("user-stop");
+  };
+
+  private readonly handleTrackEnded = (): void => {
+    this.requestStop("track-ended");
+  };
+
+  private readonly handlePageHide = (): void => {
+    this.requestStop("page-hidden");
+  };
+
+  private readonly handleVisibilityChange = (): void => {
+    if (this.visibilityDocument?.visibilityState === "hidden") {
+      this.requestStop("page-hidden");
+    }
   };
 
   private readonly handleStop = (): void => {
@@ -176,12 +228,19 @@ class BrowserVoiceCaptureSession implements VoiceCaptureSession {
       );
       return;
     }
-    this.completion.resolve({ blob, mimeType, durationMs, size: blob.size });
+    this.completion.resolve({
+      blob,
+      mimeType,
+      durationMs,
+      size: blob.size,
+      terminationReason: this.terminationReason
+    });
   };
 
-  private requestStop(): void {
+  private requestStop(reason: CaptureTerminationReason): void {
     if (this.settled || this.stopRequested) return;
     this.stopRequested = true;
+    this.terminationReason = reason;
     if (this.recorder.state === "inactive") {
       // MediaRecorder changes to inactive before its final dataavailable and
       // stop events. The stop event is the only safe point to assemble audio.
@@ -200,6 +259,14 @@ class BrowserVoiceCaptureSession implements VoiceCaptureSession {
     this.timer = null;
     this.recorder.removeEventListener("dataavailable", this.handleData);
     this.recorder.removeEventListener("error", this.handleError);
+    for (const track of this.tracks) {
+      track.removeEventListener?.("ended", this.handleTrackEnded);
+    }
+    this.pageLifecycleTarget?.removeEventListener("pagehide", this.handlePageHide);
+    this.visibilityDocument?.removeEventListener(
+      "visibilitychange",
+      this.handleVisibilityChange
+    );
     stopTracks(this.stream);
   }
 }
@@ -232,8 +299,41 @@ export class BrowserVoiceCapture {
     const operationId = ++this.operationId;
     this.starting = true;
 
+    const pageLifecycleTarget = this.options.pageLifecycleTarget ??
+      (typeof globalThis.window !== "undefined" ? globalThis.window : undefined);
+    const visibilityDocument = this.options.visibilityDocument ??
+      (typeof globalThis.document !== "undefined" ? globalThis.document : undefined);
+    const stopOnPageHide = this.options.stopOnPageHide ?? true;
+    const stopOnHidden = this.options.stopOnHidden ?? true;
+    let lifecycleCancelled = false;
+    const cancelPendingStart = (): void => {
+      if (operationId !== this.operationId) return;
+      lifecycleCancelled = true;
+      this.operationId += 1;
+      this.starting = false;
+    };
+    const handlePendingVisibilityChange = (): void => {
+      if (visibilityDocument?.visibilityState === "hidden") cancelPendingStart();
+    };
+    if (stopOnPageHide) {
+      pageLifecycleTarget?.addEventListener("pagehide", cancelPendingStart);
+    }
+    if (stopOnHidden) {
+      visibilityDocument?.addEventListener(
+        "visibilitychange",
+        handlePendingVisibilityChange
+      );
+      handlePendingVisibilityChange();
+    }
+
     let stream: MediaStream;
     try {
+      if (lifecycleCancelled) {
+        throw new VoiceInputError(
+          "capture-cancelled",
+          "Voice recording was cancelled while the page was inactive."
+        );
+      }
       stream = await mediaDevices.getUserMedia({
         audio: {
           channelCount: 1,
@@ -243,19 +343,31 @@ export class BrowserVoiceCapture {
         video: false
       });
     } catch (error) {
-      if (operationId !== this.operationId) {
+      if (lifecycleCancelled || operationId !== this.operationId) {
         throw new VoiceInputError("capture-cancelled", "Voice recording was cancelled.", {
           cause: error
         });
       }
       throw mapCaptureFailure(error);
     } finally {
+      pageLifecycleTarget?.removeEventListener("pagehide", cancelPendingStart);
+      visibilityDocument?.removeEventListener(
+        "visibilitychange",
+        handlePendingVisibilityChange
+      );
       if (operationId === this.operationId) this.starting = false;
     }
 
-    if (operationId !== this.operationId) {
+    if (
+      lifecycleCancelled ||
+      operationId !== this.operationId ||
+      (stopOnHidden && visibilityDocument?.visibilityState === "hidden")
+    ) {
       stopTracks(stream);
-      throw new VoiceInputError("capture-cancelled", "Voice recording was cancelled.");
+      throw new VoiceInputError(
+        "capture-cancelled",
+        "Voice recording was cancelled while the page was inactive."
+      );
     }
 
     try {
@@ -270,7 +382,11 @@ export class BrowserVoiceCapture {
         maxDurationMs: this.options.maxDurationMs ?? DEFAULT_MAX_DURATION_MS,
         maxBytes: this.options.maxBytes ?? DEFAULT_MAX_BYTES,
         timesliceMs: this.options.timesliceMs ?? 1_000,
-        now: this.options.now ?? Date.now
+        now: this.options.now ?? Date.now,
+        ...(pageLifecycleTarget ? { pageLifecycleTarget } : {}),
+        ...(visibilityDocument ? { visibilityDocument } : {}),
+        stopOnPageHide,
+        stopOnHidden
       });
       if (operationId !== this.operationId) {
         session.cancel();

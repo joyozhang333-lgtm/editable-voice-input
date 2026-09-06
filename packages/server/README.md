@@ -18,3 +18,5 @@ const handle = createTranscriptionHandler({
 ```
 
 Authentication and quota callbacks are integration points, not bundled identity or distributed rate-limit systems. In multi-instance deployments, back quotas with a shared atomic store.
+
+Successful responses use `durationMs`. Providers that still return the deprecated `durationSeconds` field are accepted and normalized at the server boundary.

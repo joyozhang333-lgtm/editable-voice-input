@@ -1,6 +1,6 @@
 {
   "name": "@editable-voice-input/provider-openai-compatible",
-  "version": "0.1.0-alpha.1",
+  "version": "0.2.0-beta.1",
   "description": "Server-side transcription adapter for OpenAI-compatible multipart endpoints.",
   "license": "MIT",
   "engines": { "node": ">=20" },

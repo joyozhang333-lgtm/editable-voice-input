@@ -73,7 +73,8 @@ function parseProviderResponse(raw: string): ProviderTranscriptionResult {
   if (typeof record.language === "string") result.language = record.language;
   const duration = record.duration ?? record.duration_seconds;
   if (typeof duration === "number" && Number.isFinite(duration)) {
-    result.durationSeconds = duration;
+    const durationMs = duration * 1_000;
+    if (Number.isFinite(durationMs) && durationMs >= 0) result.durationMs = durationMs;
   }
   return result;
 }

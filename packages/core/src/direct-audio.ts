@@ -1,5 +1,7 @@
 import { VoiceInputError, type CapturedAudio } from "./types";
 
+export const MAX_PLAYABLE_AUDIO_DURATION_MS = 24 * 60 * 60 * 1_000;
+
 export interface PlayableAudioMetadata {
   url: string;
   mimeType: string;
@@ -89,8 +91,15 @@ export function validateDirectAudioMessage(
   if (!/^audio\/[a-z0-9.+-]+(?:\s*;.*)?$/i.test(mimeType)) {
     throw new VoiceInputError("submission-failed", "Audio message MIME type is invalid.");
   }
-  const durationMs = requiredFiniteNumber(audioSource, "durationMs", "audio.durationMs");
-  if (durationMs < 0) {
+  const durationMs =
+    audioSource.durationMs !== undefined
+      ? requiredFiniteNumber(audioSource, "durationMs", "audio.durationMs")
+      : requiredFiniteNumber(audioSource, "durationSeconds", "audio.durationSeconds") * 1_000;
+  if (
+    !Number.isFinite(durationMs) ||
+    durationMs <= 0 ||
+    durationMs > MAX_PLAYABLE_AUDIO_DURATION_MS
+  ) {
     throw new VoiceInputError("submission-failed", "Audio message duration is invalid.");
   }
   const size = requiredFiniteNumber(audioSource, "size", "audio.size");

@@ -80,6 +80,10 @@ class AsyncStopMediaRecorder extends EventTarget {
   }
 }
 
+class FakeTrack extends EventTarget {
+  readonly stop = vi.fn();
+}
+
 describe("MIME negotiation", () => {
   it("selects the first supported browser recording format", () => {
     const isTypeSupported = vi.fn((type: string) => type === "audio/mp4");
@@ -182,10 +186,32 @@ describe("BrowserVoiceCapture", () => {
     expect(result).toMatchObject({
       mimeType: "audio/webm;codecs=opus",
       durationMs: 850,
-      size: 3
+      size: 3,
+      terminationReason: "user-stop"
     });
     expect(result.blob).toBeInstanceOf(Blob);
     expect(stopTrack).toHaveBeenCalledOnce();
+  });
+
+  it("marks an automatic duration limit separately from a user stop", async () => {
+    vi.useFakeTimers();
+    try {
+      const track = new FakeTrack();
+      const capture = new BrowserVoiceCapture({
+        mediaDevices: {
+          getUserMedia: vi.fn(async () => ({ getTracks: () => [track] } as unknown as MediaStream))
+        },
+        MediaRecorderConstructor: FakeMediaRecorder as unknown as typeof MediaRecorder,
+        maxDurationMs: 50
+      });
+      const session = await capture.start();
+      await vi.advanceTimersByTimeAsync(50);
+      await expect(session.result).resolves.toMatchObject({
+        terminationReason: "max-duration"
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("rejects overlapping starts while microphone permission is pending", async () => {
@@ -224,9 +250,72 @@ describe("BrowserVoiceCapture", () => {
     expect(stopTrack).toHaveBeenCalledOnce();
   });
 
+  it.each(["pagehide", "hidden"] as const)(
+    "cancels pending microphone permission when the page exits through %s",
+    async (exit) => {
+      const permission = deferred<MediaStream>();
+      const track = new FakeTrack();
+      const pageLifecycleTarget = new EventTarget();
+      const visibilityTarget = new EventTarget() as EventTarget & {
+        visibilityState: DocumentVisibilityState;
+      };
+      visibilityTarget.visibilityState = "visible";
+      const capture = new BrowserVoiceCapture({
+        mediaDevices: { getUserMedia: vi.fn(() => permission.promise) },
+        MediaRecorderConstructor: FakeMediaRecorder as unknown as typeof MediaRecorder,
+        pageLifecycleTarget,
+        visibilityDocument: visibilityTarget
+      });
+
+      const start = capture.start();
+      if (exit === "pagehide") pageLifecycleTarget.dispatchEvent(new Event("pagehide"));
+      else {
+        visibilityTarget.visibilityState = "hidden";
+        visibilityTarget.dispatchEvent(new Event("visibilitychange"));
+      }
+      permission.resolve({ getTracks: () => [track] } as unknown as MediaStream);
+
+      await expect(start).rejects.toMatchObject({ code: "capture-cancelled" });
+      expect(track.stop).toHaveBeenCalledOnce();
+    }
+  );
+
   it("remains reusable after an unsupported start attempt", async () => {
     const capture = new BrowserVoiceCapture();
     await expect(capture.start()).rejects.toMatchObject({ code: "unsupported-browser" });
     await expect(capture.start()).rejects.toMatchObject({ code: "unsupported-browser" });
   });
+
+  it.each(["track-ended", "pagehide", "hidden"] as const)(
+    "safely stops and releases audio on %s lifecycle exit",
+    async (exit) => {
+      const track = new FakeTrack();
+      const pageLifecycleTarget = new EventTarget();
+      const visibilityTarget = new EventTarget() as EventTarget & {
+        visibilityState: DocumentVisibilityState;
+      };
+      visibilityTarget.visibilityState = "visible";
+      const stream = { getTracks: () => [track] } as unknown as MediaStream;
+      const capture = new BrowserVoiceCapture({
+        mediaDevices: { getUserMedia: vi.fn(async () => stream) },
+        MediaRecorderConstructor: FakeMediaRecorder as unknown as typeof MediaRecorder,
+        pageLifecycleTarget,
+        visibilityDocument: visibilityTarget
+      });
+      const session = await capture.start();
+
+      if (exit === "track-ended") track.dispatchEvent(new Event("ended"));
+      if (exit === "pagehide") pageLifecycleTarget.dispatchEvent(new Event("pagehide"));
+      if (exit === "hidden") {
+        visibilityTarget.visibilityState = "hidden";
+        visibilityTarget.dispatchEvent(new Event("visibilitychange"));
+      }
+
+      await expect(session.result).resolves.toMatchObject({ size: 3 });
+      await expect(session.result).resolves.toMatchObject({
+        terminationReason: exit === "track-ended" ? "track-ended" : "page-hidden"
+      });
+      expect(track.stop).toHaveBeenCalledOnce();
+    }
+  );
 });

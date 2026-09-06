@@ -1,6 +1,6 @@
 {
   "name": "@editable-voice-input/server",
-  "version": "0.1.0-alpha.1",
+  "version": "0.2.0-beta.1",
   "description": "Framework-neutral validation and request handling for temporary voice transcription.",
   "license": "MIT",
   "engines": { "node": ">=20" },

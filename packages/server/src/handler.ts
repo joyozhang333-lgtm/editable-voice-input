@@ -233,13 +233,18 @@ export function createTranscriptionHandler(
       }
 
       const metadata = typeof result === "string" ? null : result;
+      const providerDurationMs = metadata?.durationMs ??
+        (metadata?.durationSeconds !== undefined ? metadata.durationSeconds * 1_000 : undefined);
       return json(
         {
           text,
           ...(metadata?.language ? { language: metadata.language } : {}),
-          ...(metadata?.durationSeconds !== undefined
-            ? { durationSeconds: metadata.durationSeconds }
-            : {})
+          durationMs:
+            providerDurationMs !== undefined &&
+            Number.isFinite(providerDurationMs) &&
+            providerDurationMs > 0
+              ? providerDurationMs
+              : durationMs
         },
         200,
         options,

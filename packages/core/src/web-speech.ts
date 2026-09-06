@@ -53,6 +53,17 @@ export interface BrowserWebSpeechDictationProviderOptions {
   RecognitionConstructor?: WebSpeechRecognitionConstructor;
   continuous?: boolean;
   interimResults?: boolean;
+  /** Restart after a browser ends recognition on silence while the user is still listening. */
+  restartOnEnd?: boolean;
+  /** Small delay avoids `InvalidStateError` in engines that finish asynchronously. */
+  restartDelayMs?: number;
+  pageLifecycleTarget?: Pick<EventTarget, "addEventListener" | "removeEventListener">;
+  visibilityDocument?: Pick<
+    Document,
+    "visibilityState" | "addEventListener" | "removeEventListener"
+  >;
+  stopOnPageHide?: boolean;
+  stopOnHidden?: boolean;
 }
 
 interface Deferred<T> {
@@ -124,10 +135,17 @@ function alternativeAt(
 class BrowserWebSpeechDictationSession implements DictationProviderSession {
   private readonly recognition: WebSpeechRecognitionLike;
   private readonly input: DictationProviderStartInput;
+  private readonly options: BrowserWebSpeechDictationProviderOptions;
+  private readonly pageLifecycleTarget?: BrowserWebSpeechDictationProviderOptions["pageLifecycleTarget"];
+  private readonly visibilityDocument?: BrowserWebSpeechDictationProviderOptions["visibilityDocument"];
   private readonly completion = deferred<void>();
   private readonly finalizedIndexes = new Set<number>();
+  private restartTimer: ReturnType<typeof setTimeout> | null = null;
   private settled = false;
   private cancelled = false;
+  private stopRequested = false;
+  private naturalEndPending = false;
+  private operationToken = 0;
 
   constructor(
     RecognitionConstructor: WebSpeechRecognitionConstructor,
@@ -136,6 +154,13 @@ class BrowserWebSpeechDictationSession implements DictationProviderSession {
   ) {
     this.recognition = new RecognitionConstructor();
     this.input = input;
+    this.options = options;
+    this.pageLifecycleTarget =
+      options.pageLifecycleTarget ??
+      (typeof globalThis.window !== "undefined" ? globalThis.window : undefined);
+    this.visibilityDocument =
+      options.visibilityDocument ??
+      (typeof globalThis.document !== "undefined" ? globalThis.document : undefined);
     this.recognition.continuous = options.continuous ?? true;
     this.recognition.interimResults = options.interimResults ?? true;
     if (input.language) this.recognition.lang = input.language;
@@ -143,6 +168,15 @@ class BrowserWebSpeechDictationSession implements DictationProviderSession {
     this.recognition.onerror = this.handleError;
     this.recognition.onend = this.handleEnd;
     input.signal?.addEventListener("abort", this.handleAbort, { once: true });
+    if (options.stopOnPageHide ?? true) {
+      this.pageLifecycleTarget?.addEventListener("pagehide", this.handleLifecycleExit);
+    }
+    if (options.stopOnHidden ?? true) {
+      this.visibilityDocument?.addEventListener(
+        "visibilitychange",
+        this.handleVisibilityChange
+      );
+    }
   }
 
   get result(): Promise<void> {
@@ -154,24 +188,40 @@ class BrowserWebSpeechDictationSession implements DictationProviderSession {
   }
 
   begin(): void {
-    if (this.input.signal?.aborted) {
+    if (this.input.signal?.aborted || this.isPageInactive()) {
+      this.settled = true;
       this.cleanup();
-      throw new VoiceInputError("capture-cancelled", "Speech recognition was cancelled.");
+      this.completion.resolve(undefined);
+      throw new VoiceInputError(
+        "capture-cancelled",
+        "Speech recognition was cancelled while the page was inactive."
+      );
     }
     try {
-      this.recognition.start();
+      this.beginRecognition();
     } catch (error) {
+      this.settled = true;
       this.cleanup();
+      this.completion.resolve(undefined);
       throw mapWebSpeechError(error);
     }
   }
 
   stop(): Promise<void> {
     if (this.settled) return this.result;
+    this.stopRequested = true;
+    if (this.restartTimer || this.naturalEndPending) {
+      this.resolve();
+      return this.result;
+    }
     try {
       this.recognition.stop();
     } catch (error) {
-      this.reject(mapWebSpeechError(error));
+      if (error instanceof DOMException && error.name === "InvalidStateError") {
+        this.resolve();
+      } else {
+        this.reject(mapWebSpeechError(error));
+      }
     }
     return this.result;
   }
@@ -218,6 +268,21 @@ class BrowserWebSpeechDictationSession implements DictationProviderSession {
 
   private readonly handleError = (event: WebSpeechRecognitionErrorEventLike): void => {
     if (this.settled) return;
+    if (event.error === "no-speech") {
+      if (this.stopRequested) {
+        // Some engines emit `no-speech` synchronously from stop() before onend.
+        // An explicit stop is successful even when the final segment is empty.
+        this.resolve();
+        return;
+      }
+      // Browsers normally follow this with onend; keep listening intent alive.
+      this.naturalEndPending = true;
+      return;
+    }
+    if (event.error === "aborted" && this.stopRequested) {
+      this.resolve();
+      return;
+    }
     if (this.cancelled || event.error === "aborted") {
       this.reject(new VoiceInputError("capture-cancelled", "Speech recognition was cancelled."));
       return;
@@ -227,13 +292,47 @@ class BrowserWebSpeechDictationSession implements DictationProviderSession {
 
   private readonly handleEnd = (): void => {
     if (this.settled) return;
-    this.settled = true;
-    this.cleanup();
-    this.completion.resolve(undefined);
+    this.naturalEndPending = false;
+    if (!this.stopRequested && (this.options.restartOnEnd ?? true)) {
+      if (this.restartTimer) return;
+      this.input.onResult({ transcript: "", isFinal: false });
+      const restartToken = ++this.operationToken;
+      this.restartTimer = setTimeout(() => {
+        this.restartTimer = null;
+        if (
+          restartToken !== this.operationToken ||
+          this.settled ||
+          this.stopRequested ||
+          this.cancelled
+        ) {
+          return;
+        }
+        if (this.isPageInactive()) {
+          this.cancel();
+          return;
+        }
+        try {
+          this.beginRecognition();
+        } catch (error) {
+          this.reject(mapWebSpeechError(error));
+        }
+      }, this.options.restartDelayMs ?? 120);
+      return;
+    }
+    this.resolve();
   };
 
   private readonly handleAbort = (): void => {
     this.cancel();
+  };
+
+  private readonly handleLifecycleExit = (): void => {
+    this.operationToken += 1;
+    this.cancel();
+  };
+
+  private readonly handleVisibilityChange = (): void => {
+    if (this.isPageInactive()) this.handleLifecycleExit();
   };
 
   private reject(error: VoiceInputError): void {
@@ -243,11 +342,45 @@ class BrowserWebSpeechDictationSession implements DictationProviderSession {
     this.completion.reject(error);
   }
 
+  private resolve(): void {
+    if (this.settled) return;
+    this.settled = true;
+    this.cleanup();
+    this.completion.resolve(undefined);
+  }
+
   private cleanup(): void {
+    if (this.restartTimer) clearTimeout(this.restartTimer);
+    this.restartTimer = null;
+    this.operationToken += 1;
     this.input.signal?.removeEventListener("abort", this.handleAbort);
+    this.pageLifecycleTarget?.removeEventListener("pagehide", this.handleLifecycleExit);
+    this.visibilityDocument?.removeEventListener(
+      "visibilitychange",
+      this.handleVisibilityChange
+    );
     this.recognition.onresult = null;
     this.recognition.onerror = null;
     this.recognition.onend = null;
+  }
+
+  private beginRecognition(): void {
+    if (this.isPageInactive()) {
+      throw new VoiceInputError(
+        "capture-cancelled",
+        "Speech recognition was cancelled while the page was inactive."
+      );
+    }
+    this.naturalEndPending = false;
+    this.finalizedIndexes.clear();
+    this.recognition.start();
+  }
+
+  private isPageInactive(): boolean {
+    return (
+      (this.options.stopOnHidden ?? true) &&
+      this.visibilityDocument?.visibilityState === "hidden"
+    );
   }
 }
 

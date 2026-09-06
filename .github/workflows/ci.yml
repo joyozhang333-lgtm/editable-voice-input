@@ -23,7 +23,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
-      - run: pnpm test
+      - name: Test with enforced coverage thresholds
+        run: pnpm test:coverage
       - run: pnpm build
       - run: pnpm pack:check
       - run: pnpm scan:secrets

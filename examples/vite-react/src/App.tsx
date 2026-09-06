@@ -27,6 +27,7 @@ function formatDuration(milliseconds: number): string {
 export function App() {
   const [mode, setMode] = useState<DemoMode>("dictation");
   const [submitted, setSubmitted] = useState("");
+  const [webSpeechAllowed, setWebSpeechAllowed] = useState(false);
   const demoUrlsRef = useRef<string[]>([]);
   const localTransport = useMemo<DirectAudioUploadTransport>(
     () => ({
@@ -54,6 +55,7 @@ export function App() {
   const dictation = useEditableDictation({
     defaultValue: "",
     language: "zh-CN",
+    enableBrowserWebSpeech: webSpeechAllowed,
     authoritativeTranscribe: transcribe
   });
   const directAudio = useDirectAudioMessage({
@@ -110,6 +112,19 @@ export function App() {
       {mode === "dictation" ? (
         <section className="example-card" role="tabpanel">
           <label htmlFor="dictation-draft">Editable draft</label>
+          <label className="example-consent">
+            <input
+              type="checkbox"
+              checked={webSpeechAllowed}
+              disabled={dictation.state === "listening"}
+              onChange={(event) => setWebSpeechAllowed(event.currentTarget.checked)}
+            />
+            Enable browser-vendor live recognition for this demo
+          </label>
+          <p className="example-disclosure">
+            Optional. Your browser may process speech through its vendor. Batch transcription still
+            works when this is off or unavailable.
+          </p>
           <textarea
             id="dictation-draft"
             value={dictation.value}
@@ -126,6 +141,11 @@ export function App() {
               <span>Batch transcript kept as a suggestion because you edited the draft</span>
               <p>{dictation.authoritativeSuggestion}</p>
             </div>
+          ) : null}
+          {dictation.liveError ? (
+            <p className="example-status" aria-live="polite">
+              Live recognition unavailable; recording continues in batch-only mode.
+            </p>
           ) : null}
           {dictation.audioUrl ? (
             <audio controls preload="metadata" src={dictation.audioUrl}>

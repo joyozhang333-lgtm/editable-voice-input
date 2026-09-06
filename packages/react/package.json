@@ -1,6 +1,6 @@
 {
   "name": "@editable-voice-input/react",
-  "version": "0.1.0-alpha.1",
+  "version": "0.2.0-beta.1",
   "description": "Accessible, editable, themeable React voice input with explicit submit semantics.",
   "license": "MIT",
   "engines": { "node": ">=20" },

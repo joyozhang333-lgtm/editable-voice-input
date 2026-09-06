@@ -20,7 +20,19 @@ export default defineConfig({
       provider: "v8",
       reporter: ["text", "json-summary"],
       include: ["packages/*/src/**/*.{ts,tsx}"],
-      exclude: ["**/*.test.{ts,tsx}", "**/index.ts"]
+      exclude: [
+        "**/*.test.{ts,tsx}",
+        "packages/core/src/index.ts",
+        "packages/provider-openai-compatible/src/index.ts",
+        "packages/react/src/index.ts",
+        "packages/server/src/index.ts"
+      ],
+      thresholds: {
+        statements: 82,
+        branches: 70,
+        functions: 79,
+        lines: 85
+      }
     }
   }
 });

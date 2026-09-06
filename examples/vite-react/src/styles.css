@@ -92,6 +92,28 @@ h1 {
   font-size: 12px;
 }
 
+.example-consent {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 44px;
+  margin-top: 10px;
+  color: #514b44;
+  font-size: 14px !important;
+}
+
+.example-consent input {
+  width: 20px;
+  height: 20px;
+}
+
+.example-disclosure {
+  margin: -2px 0 10px;
+  color: #777067;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
 .example-card textarea {
   box-sizing: border-box;
   display: block;

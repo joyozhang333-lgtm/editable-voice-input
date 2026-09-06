@@ -34,11 +34,19 @@ export class VoiceInputError extends Error {
   }
 }
 
+export type CaptureTerminationReason =
+  | "user-stop"
+  | "max-duration"
+  | "track-ended"
+  | "page-hidden";
+
 export interface CapturedAudio {
   blob: Blob;
   mimeType: string;
   durationMs: number;
   size: number;
+  /** Browser capture reports why it stopped; custom capture adapters should do the same. */
+  terminationReason?: CaptureTerminationReason;
 }
 
 export interface TranscriptionInput extends CapturedAudio {
@@ -49,6 +57,9 @@ export interface TranscriptionInput extends CapturedAudio {
 export interface TranscriptionResult {
   text: string;
   language?: string;
+  /** Canonical duration unit for every public package. */
+  durationMs?: number;
+  /** @deprecated Return `durationMs` instead. Accepted for 0.1 provider compatibility. */
   durationSeconds?: number;
 }
 

@@ -121,6 +121,14 @@ export function useVoiceInput(options: UseVoiceInputOptions): UseVoiceInputResul
       stopTimer();
       sessionRef.current = null;
       replaceAudio(captured);
+      if (
+        captured.terminationReason === "track-ended" ||
+        captured.terminationReason === "page-hidden"
+      ) {
+        setError(null);
+        setState("review");
+        return;
+      }
       setState("transcribing");
       const controller = new AbortController();
       abortRef.current = controller;

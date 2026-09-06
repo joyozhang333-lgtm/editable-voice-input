@@ -8,14 +8,14 @@ Editable Voice Input is a small, provider-neutral toolkit for adding voice input
 
 ## Why this interaction model
 
-- Recording is temporary and stays in memory unless the host application chooses otherwise.
+- Recording is temporary and stays in memory unless the host explicitly stages it in an outbox.
 - Transcription never auto-submits a message.
 - The user can replay the recording, edit the transcript, retry, cancel, or submit.
 - Browser capture, React UI, request validation, and transcription providers are separate packages.
 - Live interim speech is never written over the editable value.
 - A post-stop batch transcript replaces streaming text only if the user has not edited it.
 - Direct audio upload is an injected transport; the library does not choose storage or retention.
-- There is no telemetry, bundled speech model, account system, or storage layer.
+- There is no telemetry, bundled speech model, account system, or storage enabled by default.
 
 ## Packages
 
@@ -25,6 +25,11 @@ Editable Voice Input is a small, provider-neutral toolkit for adding voice input
 | `@editable-voice-input/react` | Legacy `useVoiceInput`, `useEditableDictation`, `useDirectAudioMessage`, and minimal components |
 | `@editable-voice-input/server` | Framework-neutral raw-body limits, audio signature validation, and request handler |
 | `@editable-voice-input/provider-openai-compatible` | Provider adapter for OpenAI-compatible transcription APIs |
+| `@editable-voice-input/adapter-guichu` | GuiChu Here conversation/session/owner adapter, isolated from core |
+
+`@editable-voice-input/adapter-guichu` is a reference host-integration contract, not a GuiChu/V0954 backend. It does not ship server routes, receipt persistence, database migrations, or evidence that any production app has integrated the package. A host must implement and transaction-test those boundaries before claiming end-to-end delivery.
+
+V0954 currently uses its own voice implementation and does not import this SDK.
 
 ## Quick start
 
@@ -58,13 +63,14 @@ The component does not call `onSubmit` after transcription. Only the visible sub
 
 ## Editable live dictation
 
-`useEditableDictation` uses the browser Web Speech API by default, but accepts any `DictationProvider`. Interim hypotheses are exposed as `interimText`; only final segments enter the editable value. Adding `authoritativeTranscribe` records temporary audio in parallel and runs a batch transcription after stop.
+`useEditableDictation` accepts any `DictationProvider`. Browser Web Speech is disabled by default because a browser vendor may process the audio; the host must disclose that processing and explicitly pass `enableBrowserWebSpeech: true`. Interim hypotheses are exposed as `interimText`; only final segments enter the editable value. Adding `authoritativeTranscribe` records temporary audio in parallel and runs a batch transcription after stop.
 
 ```tsx
 const dictation = useEditableDictation({
   value: draft,
   onValueChange: setDraft,
   language: "en-US",
+  enableBrowserWebSpeech: true, // only after your product's disclosure/consent step
   authoritativeTranscribe: transcribeThroughYourServer
 });
 
@@ -77,7 +83,11 @@ const dictation = useEditableDictation({
 
 If the user edits while speaking, the batch result is placed in `authoritativeSuggestion` and never overwrites `value`. A host can show a compare/accept UI. If the draft is untouched, the batch result is applied automatically.
 
-The built-in Web Speech provider is optional and browser-dependent. You can instead inject a native, WebSocket, on-device, or vendor SDK provider through the same `DictationProvider` contract.
+The built-in Web Speech provider is optional and browser-dependent. It restarts after a browser ends recognition on silence while the user still intends to listen. If it is unavailable or errors and `authoritativeTranscribe` is configured, recording continues in `batch-only` mode; the failure is exposed as non-fatal `liveError`. You can instead inject a native, WebSocket, on-device, or vendor SDK provider through the same `DictationProvider` contract.
+
+## Headless two-mode composer
+
+`useDualModeVoiceInput` coordinates editable dictation and direct audio without allowing both capture paths to remain active, including same-tick calls to both headless start methods. `DualModeVoiceInput` is an optional minimal UI with keyboard tabs and 44 px touch targets; product teams can use the headless hook and render their own interface.
 
 ## Direct audio messages
 
@@ -101,6 +111,16 @@ const audioMessage = useDirectAudioMessage({
 ```
 
 The server should treat `clientMessageId` as an idempotency key and must authorize upload and playback separately. The core validates that the returned message echoes this ID, preventing a late response from attaching to a different local recording.
+
+### Durable direct-audio reconciliation
+
+`DirectAudioOutbox` stages a recording under a stable `clientTurnId`, performs an exact owner-authorized lookup before upload, and only deletes the pending record after a validated server message exists. A lost upload response can therefore recover on refresh. A validated upload response is treated as a durable receipt: if local IndexedDB cleanup aborts, `send()` still succeeds with `cleanupPending: true`, leaves the row recoverable, and retries exact reconciliation later. Exactly-once creation across tabs or devices also requires an atomic server unique constraint on `(owner, clientTurnId)`; concurrent upload conflicts must return the existing message.
+
+Durability is injected through `DirectAudioOutboxStore`. `createIndexedDbDirectAudioOutboxStore` is available for browsers, but requires both a codec and an opaque `partition` for the current owner. Rows use a composite `(partition, clientTurnId)` key; `get`, `list`, `delete`, and `clear` are scoped to that partition. A durable partition epoch makes `clear()` atomic with row deletion and prevents delayed cross-tab encodes from restoring stale rows. Each send also acquires a persisted partition-epoch + row-revision lease, rechecks it around lookup and immediately before upload, and uses it for conditional cleanup. `claimTo()` atomically CASes source and target epochs while moving and re-encrypting a record, so an old tab cannot continue after clear or claim. Multiple custom `storeName` values coordinate through IndexedDB version upgrades; every realm closes on `versionchange`, then reopens and retries interrupted schema/row transactions. An incompatible custom key path fails closed and is never deleted or rewritten. Create a new store instance when identity changes and never use a raw account identifier as the partition. The host codec must encrypt the record, bind the current identity as authenticated data, expire abandoned records, and reject account changes. The memory store is for tests and non-durable demos only.
+
+GuiChu-specific `conversationId`, `sessionId`, and `ownerKey` live in `@editable-voice-input/adapter-guichu`, not in core. The adapter seals the original scope into outbox metadata and fails closed for legacy pending rows without that scope. It requires an `identityEpoch` plus host-aborted `identitySignal`; it checks the epoch before and after exact lookup/upload and supports an optional server identity preflight. Account changes must call `outbox.clear()` before activating the new owner, or use the adapter's authenticated guest-to-account claim helper. That helper links the source identity signal, target identity signal, and caller cancellation across the server wait and local IndexedDB move. It first requires an idempotent server `claimOrReconcile` receipt which atomically reconciles an existing guest message or reserves the turn for the account and revokes source writes for that turn; the receipt must echo both sides' conversation, session, owner, identity epoch, and the client turn before the local row can move. A response-loss retry must return the same durable receipt.
+
+The claim helper moves exactly one `clientTurnId`. For several pending rows, the host must enumerate them before identity transition and either obtain one durable server batch grant or keep per-turn source authorization valid while claiming each row. Do not destroy or globally revoke the source identity after the first row; finish every selected claim, then finalize the batch. This package intentionally does not pretend to orchestrate that host transaction. `clear()` is a best-effort client fence: it invalidates local stage/send continuations and asks active transports to abort, but it cannot retract a request already delivered over the network. Strong revocation therefore requires a server-side identity epoch/revocation check in the same transaction as `findExact`, `upload`, and claim reconciliation.
 
 ### Server route
 
@@ -134,7 +154,7 @@ The capture layer negotiates formats in this order: Opus WebM, WebM, MP4, Opus O
 
 Default limits are 120 seconds and 8 MiB. Hosts can lower them. The server package verifies the declared content type, file signature, and real container duration before calling the transcription provider.
 
-Web Speech recognition availability is separate from MediaRecorder support. Chromium generally exposes it; iOS Safari support and behavior vary by OS version and may stop on silence or when the page backgrounds. Always feature-detect, retain typed text, and keep batch-only dictation as a fallback.
+Web Speech recognition availability is separate from MediaRecorder support. Chromium generally exposes it; iOS Safari support and behavior vary by OS version and may stop on silence or when the page backgrounds. Always feature-detect, retain typed text, and keep batch-only dictation as a fallback. Capture safely stops when its media track ends or the page is hidden/unloaded. Lifecycle-stopped audio is marked with a `terminationReason`, remains reviewable while the page survives, and is never treated as an explicit stop-to-send action.
 
 ## Styling
 
@@ -163,7 +183,7 @@ To run the Next development example, copy its `.env.example` to `.env.local`, pr
 
 ## Privacy contract
 
-This library does not persist audio or transcripts and does not include telemetry. Browser Web Speech implementations may send speech to the browser vendor; disclose and obtain consent for the provider actually selected. The current recording `Blob` is returned to the host so a product can deliberately implement retention if needed. If you store recordings, disclose retention, encrypt storage, authorize every read, and provide deletion and export controls. See [PRIVACY.md](./PRIVACY.md).
+This library does not persist audio or transcripts unless the host explicitly creates and uses an outbox store, and it does not include telemetry. Browser Web Speech implementations may send speech to the browser vendor; it is off by default, so disclose and obtain consent before enabling it. The current recording `Blob` is returned to the host so a product can deliberately implement retention if needed. If you store recordings, disclose retention, encrypt storage, authorize every read, and provide deletion and export controls. See [PRIVACY.md](./PRIVACY.md).
 
 ## Development
 
@@ -172,9 +192,9 @@ corepack pnpm install --frozen-lockfile
 pnpm check
 ```
 
-Releases are intended to use Changesets. This repository starts at `0.1.0-alpha.1`; no package is published automatically.
+This branch remains in Changesets `beta` prerelease mode at `0.2.0-beta.1`; no package is published automatically. Do not run a stable version/publish step until physical mobile-browser QA is complete.
 
-Before a future npm release, run `pnpm pack:release` and publish the generated tarballs from `release-packs/`. Do not run `npm pack` directly inside a workspace package: pnpm's pack step is what rewrites internal `workspace:*` dependencies to the concrete release version. CI installs all four generated tarballs into an empty npm project and verifies ESM, CommonJS, ESM/CommonJS declarations, and the exported stylesheet.
+Before a future npm release, run `pnpm pack:release` and publish the generated tarballs from `release-packs/`. Do not run `npm pack` directly inside a workspace package: pnpm's pack step is what rewrites internal `workspace:*` dependencies to the concrete release version. CI installs all five generated tarballs into an empty npm project and verifies ESM, CommonJS, ESM/CommonJS declarations, and the exported stylesheet.
 
 ## License
 
