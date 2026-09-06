@@ -13,12 +13,9 @@ import {
   type VoiceSubmission
 } from "@editable-voice-input/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { VoiceCaptureController } from "./capture-controller";
 
-export interface VoiceCaptureController {
-  start(): Promise<VoiceCaptureSession>;
-  cancel(): void;
-  dispose(): void;
-}
+export type { VoiceCaptureController } from "./capture-controller";
 
 export interface UseVoiceInputOptions {
   value?: string;
@@ -124,6 +121,14 @@ export function useVoiceInput(options: UseVoiceInputOptions): UseVoiceInputResul
       stopTimer();
       sessionRef.current = null;
       replaceAudio(captured);
+      if (
+        captured.terminationReason === "track-ended" ||
+        captured.terminationReason === "page-hidden"
+      ) {
+        setError(null);
+        setState("review");
+        return;
+      }
       setState("transcribing");
       const controller = new AbortController();
       abortRef.current = controller;

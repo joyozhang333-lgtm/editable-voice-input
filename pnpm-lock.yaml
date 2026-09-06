@@ -17,6 +17,9 @@ importers:
       '@vitest/coverage-v8':
         specifier: 4.0.15
         version: 4.0.15(supports-color@7.2.0)(vitest@4.0.15(@types/node@24.10.1)(jsdom@27.2.0(supports-color@7.2.0)))
+      fake-indexeddb:
+        specifier: 6.2.5
+        version: 6.2.5
       tsup:
         specifier: 8.5.1
         version: 8.5.1(postcss@8.5.26)(supports-color@7.2.0)(typescript@5.9.3)
@@ -88,6 +91,12 @@ importers:
       vite:
         specifier: 7.2.7
         version: 7.2.7(@types/node@24.10.1)
+
+  packages/adapter-guichu:
+    dependencies:
+      '@editable-voice-input/core':
+        specifier: workspace:*
+        version: link:../core
 
   packages/core: {}
 
@@ -1370,6 +1379,10 @@ packages:
 
   extendable-error@0.1.7:
     resolution: {integrity: sha512-UOiS2in6/Q0FK0R0q6UY9vYpQ21mr/Qn1KOnte7vsACuNJf514WvCCUHSRCPcgjPT2bAhNIJdlE6bVap1GKmeg==}
+
+  fake-indexeddb@6.2.5:
+    resolution: {integrity: sha512-CGnyrvbhPlWYMngksqrSSUT1BAVP49dZocrHuK0SvtR0D5TMs5wP0o3j7jexDJW01KSadjBp1M/71o/KR3nD1w==}
+    engines: {node: '>=18'}
 
   fast-glob@3.3.3:
     resolution: {integrity: sha512-7MptL8U0cqcFdzIzwOTHoilX9x5BrNqye7Z/LuC7kCMRio1EMSyqRK3BEAUD7sXRq4iT4AzTVuZdhgQ2TCvYLg==}
@@ -3256,6 +3269,8 @@ snapshots:
   expect-type@1.4.0: {}
 
   extendable-error@0.1.7: {}
+
+  fake-indexeddb@6.2.5: {}
 
   fast-glob@3.3.3:
     dependencies:

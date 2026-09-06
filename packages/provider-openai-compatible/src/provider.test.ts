@@ -56,6 +56,29 @@ describe("OpenAI-compatible provider", () => {
     );
   });
 
+  it("normalizes provider duration seconds to canonical milliseconds", async () => {
+    const provider = createOpenAICompatibleProvider({
+      fetch: vi.fn(async () =>
+        new Response(JSON.stringify({ text: "synthetic transcript", duration: 1.25 }))
+      )
+    });
+    await expect(provider.transcribe(input)).resolves.toEqual({
+      text: "synthetic transcript",
+      durationMs: 1_250
+    });
+  });
+
+  it("omits a provider duration whose millisecond conversion overflows", async () => {
+    const provider = createOpenAICompatibleProvider({
+      fetch: vi.fn(async () =>
+        new Response(JSON.stringify({ text: "synthetic transcript", duration: 1e308 }))
+      )
+    });
+    await expect(provider.transcribe(input)).resolves.toEqual({
+      text: "synthetic transcript"
+    });
+  });
+
   it("does not include an upstream response body in errors", async () => {
     const fetchMock = vi.fn(
       async () => new Response("provider private detail", { status: 429 })

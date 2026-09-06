@@ -15,7 +15,8 @@ const packages = [
   "@editable-voice-input/core",
   "@editable-voice-input/react",
   "@editable-voice-input/server",
-  "@editable-voice-input/provider-openai-compatible"
+  "@editable-voice-input/provider-openai-compatible",
+  "@editable-voice-input/adapter-guichu"
 ];
 const forbiddenEntries = [
   /^package\/\.env(?:\.|$)/,
@@ -24,6 +25,14 @@ const forbiddenEntries = [
   /(?:^|\/)coverage\//,
   /(?:^|\/)dist\/.*\.test\./,
   /\.(?:wav|mp3|m4a|ogg|webm|flac|bin)$/i
+];
+const expectedDistEntries = [
+  "package/dist/index.js",
+  "package/dist/index.js.map",
+  "package/dist/index.cjs",
+  "package/dist/index.cjs.map",
+  "package/dist/index.d.ts",
+  "package/dist/index.d.cts"
 ];
 const temporaryRoot = mkdtempSync(join(tmpdir(), "editable-voice-input-pack-"));
 const packDirectory = join(temporaryRoot, "packs");
@@ -61,10 +70,30 @@ try {
     if (forbidden.length) {
       throw new Error(`${packageName} contains forbidden packed files: ${forbidden.join(", ")}`);
     }
+    const distEntries = listing.filter((path) => path.startsWith("package/dist/"));
+    const duplicateDistEntries = [
+      ...new Set(distEntries.filter((path, index) => distEntries.indexOf(path) !== index))
+    ];
+    if (duplicateDistEntries.length) {
+      throw new Error(
+        `${packageName} contains duplicate dist files: ${duplicateDistEntries.join(", ")}`
+      );
+    }
+    const unexpectedDistEntries = distEntries.filter(
+      (path) => !expectedDistEntries.includes(path)
+    );
+    if (unexpectedDistEntries.length) {
+      throw new Error(
+        `${packageName} contains unexpected dist files: ${unexpectedDistEntries.join(", ")}`
+      );
+    }
+    const missingDistEntries = expectedDistEntries.filter((path) => !distEntries.includes(path));
+    if (missingDistEntries.length) {
+      throw new Error(
+        `${packageName} is missing dist files: ${missingDistEntries.join(", ")}`
+      );
+    }
     for (const required of [
-      "package/dist/index.js",
-      "package/dist/index.cjs",
-      "package/dist/index.d.ts",
       "package/LICENSE",
       "package/README.md"
     ]) {
@@ -107,7 +136,8 @@ import * as core from "@editable-voice-input/core";
 import * as react from "@editable-voice-input/react";
 import * as server from "@editable-voice-input/server";
 import * as provider from "@editable-voice-input/provider-openai-compatible";
-for (const value of [core, react, server, provider]) {
+import * as guichu from "@editable-voice-input/adapter-guichu";
+for (const value of [core, react, server, provider, guichu]) {
   if (!Object.keys(value).length) throw new Error("Empty ESM export");
 }
 const cssPath = fileURLToPath(import.meta.resolve("@editable-voice-input/react/styles.css"));
@@ -122,7 +152,8 @@ if (!existsSync(cssPath)) throw new Error("Missing exported CSS");
   "@editable-voice-input/core",
   "@editable-voice-input/react",
   "@editable-voice-input/server",
-  "@editable-voice-input/provider-openai-compatible"
+  "@editable-voice-input/provider-openai-compatible",
+  "@editable-voice-input/adapter-guichu"
 ]) {
   if (!Object.keys(require(name)).length) throw new Error("Empty CJS export: " + name);
 }
@@ -132,24 +163,42 @@ if (!existsSync(cssPath)) throw new Error("Missing exported CSS");
 
   writeFileSync(
     join(consumerDirectory, "check-types.ts"),
-    `import { BrowserVoiceCapture, type VoiceInputState } from "@editable-voice-input/core";
-import { EditableVoiceInput, type UseVoiceInputOptions } from "@editable-voice-input/react";
+    `import { BrowserVoiceCapture, BrowserWebSpeechDictationProvider, createIndexedDbDirectAudioOutboxStore, type DirectAudioUploadTransport, type IndexedDbDirectAudioOutboxStore, type VoiceInputState } from "@editable-voice-input/core";
+import { EditableVoiceInput, DualModeVoiceInput, useDualModeVoiceInput, useDirectAudioMessage, useEditableDictation, type UseVoiceInputOptions } from "@editable-voice-input/react";
 import { createTranscriptionHandler, type TranscriptionProvider } from "@editable-voice-input/server";
 import { createOpenAICompatibleProvider } from "@editable-voice-input/provider-openai-compatible";
+import { claimGuichuIndexedDbOutboxRecord, createGuichuVoiceTransport, type GuichuVoiceClaimReceipt, type GuichuVoiceClaimApi } from "@editable-voice-input/adapter-guichu";
 void BrowserVoiceCapture; void EditableVoiceInput; void createTranscriptionHandler;
+void BrowserWebSpeechDictationProvider; void useEditableDictation; void useDirectAudioMessage;
 void createOpenAICompatibleProvider; let state: VoiceInputState; let options: UseVoiceInputOptions;
-let provider: TranscriptionProvider; void state!; void options!; void provider!;
+void createGuichuVoiceTransport; void createIndexedDbDirectAudioOutboxStore; void claimGuichuIndexedDbOutboxRecord;
+let provider: TranscriptionProvider; let transport: DirectAudioUploadTransport; let indexedStore: IndexedDbDirectAudioOutboxStore;
+void state!; void options!; void provider!; void transport!; void indexedStore!;
+void DualModeVoiceInput; void useDualModeVoiceInput;
+declare const claimApi: GuichuVoiceClaimApi;
+declare const claimInput: Parameters<typeof claimGuichuIndexedDbOutboxRecord>[0];
+const receipt: Promise<GuichuVoiceClaimReceipt> = claimApi.claimOrReconcile({ source: claimInput.sourceContext, target: claimInput.targetContext, clientTurnId: claimInput.clientTurnId });
+void receipt;
 `
   );
   writeFileSync(
     join(consumerDirectory, "check-types.cts"),
-    `import { BrowserVoiceCapture, type VoiceInputState } from "@editable-voice-input/core";
-import { EditableVoiceInput, type UseVoiceInputOptions } from "@editable-voice-input/react";
+    `import { BrowserVoiceCapture, BrowserWebSpeechDictationProvider, createIndexedDbDirectAudioOutboxStore, type DirectAudioUploadTransport, type IndexedDbDirectAudioOutboxStore, type VoiceInputState } from "@editable-voice-input/core";
+import { EditableVoiceInput, DualModeVoiceInput, useDualModeVoiceInput, useDirectAudioMessage, useEditableDictation, type UseVoiceInputOptions } from "@editable-voice-input/react";
 import { createTranscriptionHandler, type TranscriptionProvider } from "@editable-voice-input/server";
 import { createOpenAICompatibleProvider } from "@editable-voice-input/provider-openai-compatible";
+import { claimGuichuIndexedDbOutboxRecord, createGuichuVoiceTransport, type GuichuVoiceClaimReceipt, type GuichuVoiceClaimApi } from "@editable-voice-input/adapter-guichu";
 void BrowserVoiceCapture; void EditableVoiceInput; void createTranscriptionHandler;
+void BrowserWebSpeechDictationProvider; void useEditableDictation; void useDirectAudioMessage;
 void createOpenAICompatibleProvider; let state: VoiceInputState; let options: UseVoiceInputOptions;
-let provider: TranscriptionProvider; void state!; void options!; void provider!;
+void createGuichuVoiceTransport; void createIndexedDbDirectAudioOutboxStore; void claimGuichuIndexedDbOutboxRecord;
+let provider: TranscriptionProvider; let transport: DirectAudioUploadTransport; let indexedStore: IndexedDbDirectAudioOutboxStore;
+void state!; void options!; void provider!; void transport!; void indexedStore!;
+void DualModeVoiceInput; void useDualModeVoiceInput;
+declare const claimApi: GuichuVoiceClaimApi;
+declare const claimInput: Parameters<typeof claimGuichuIndexedDbOutboxRecord>[0];
+const receipt: Promise<GuichuVoiceClaimReceipt> = claimApi.claimOrReconcile({ source: claimInput.sourceContext, target: claimInput.targetContext, clientTurnId: claimInput.clientTurnId });
+void receipt;
 `
   );
   writeFileSync(

@@ -15,4 +15,4 @@ const provider = createOpenAICompatibleProvider({
 });
 ```
 
-Use this package on the server only. The adapter sends multipart audio and returns a normalized `{ text, language?, durationSeconds? }` result.
+Use this package on the server only. The adapter sends multipart audio and returns a normalized `{ text, language?, durationMs? }` result.

@@ -124,7 +124,11 @@ describe("transcription handler", () => {
     expect(response.headers.get("access-control-allow-origin")).toBe(
       "https://app.example.test"
     );
-    expect(await response.json()).toEqual({ text: "synthetic note", language: "en" });
+    expect(await response.json()).toEqual({
+      text: "synthetic note",
+      language: "en",
+      durationMs: 1_000
+    });
     expect(transcribe).toHaveBeenCalledWith(
       expect.objectContaining({
         audio: webm,
@@ -133,6 +137,22 @@ describe("transcription handler", () => {
         language: "en"
       })
     );
+  });
+
+  it("normalizes a legacy provider duration to milliseconds", async () => {
+    const handler = createTranscriptionHandler({
+      provider: { transcribe: async () => ({ text: "synthetic note", durationSeconds: 1.5 }) },
+      allowUnauthenticated: true,
+      inspectDurationMs: async () => 1_000
+    });
+    const response = await handler(
+      new Request("https://app.example.test/api/transcribe", {
+        method: "POST",
+        headers: { origin: "https://app.example.test", "content-type": "audio/webm" },
+        body: webm
+      })
+    );
+    expect(await response.json()).toMatchObject({ durationMs: 1_500 });
   });
 
   it("rejects an untrusted origin before calling the provider", async () => {

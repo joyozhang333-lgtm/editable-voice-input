@@ -157,6 +157,47 @@
   color: var(--evi-danger);
 }
 
+.evi-mode-tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--evi-border);
+  border-radius: 999px;
+  background: var(--evi-surface);
+}
+
+.evi-mode-tabs [role="tab"] {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--evi-muted);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.evi-mode-tabs [role="tab"][aria-selected="true"] {
+  background: var(--evi-text);
+  color: var(--evi-accent-contrast);
+}
+
+.evi-mode-tabs [role="tab"]:focus-visible {
+  outline: 2px solid var(--evi-accent);
+  outline-offset: 2px;
+}
+
+.evi-mode-panel {
+  margin-top: 12px;
+}
+
+.evi-mode-panel audio {
+  width: 100%;
+  min-height: 44px;
+}
+
 .evi-sr-only {
   position: absolute;
   width: 1px;

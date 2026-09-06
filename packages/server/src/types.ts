@@ -18,6 +18,9 @@ export interface ProviderTranscriptionInput {
 export interface ProviderTranscriptionResult {
   text: string;
   language?: string;
+  /** Canonical duration unit returned by providers. */
+  durationMs?: number;
+  /** @deprecated Return `durationMs` instead. Accepted for older providers. */
   durationSeconds?: number;
 }
 
