@@ -1,5 +1,9 @@
 # @editable-voice-input/core
 
+`PressToTalkController` adds framework-neutral send/dictate intent, pointer hold/release/slide-cancel, editable draft reconciliation and session/abort fences. `bindPressToTalk` binds a native button with Pointer Capture and keyboard/assistive activation. Default capture reuses `BrowserVoiceCapture`; no Web Speech, network or persistence is enabled. `VoiceCaptureController` is now exported from core as well as the existing React path.
+
+See the [API contract](../../docs/press-to-talk.md) and [中文接口](../../docs/press-to-talk.zh-CN.md). Build standalone browser IIFE/ESM and Node server/provider CJS via `pnpm build:vendor` from the repository root; verify with `pnpm vendor:check`.
+
 Framework-neutral primitives for browser capture, editable streaming dictation, optional Web Speech recognition, authoritative batch reconciliation, playable audio-message metadata, exact-reconcile outboxes, and upload transports. No storage or network destination is enabled by default.
 
 ```ts

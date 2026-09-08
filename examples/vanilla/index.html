@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Editable Voice Input</title>
+  <link rel="stylesheet" href="./styles.css">
+  <script defer src="../../dist/vendor/press-to-talk.iife.js"></script>
+  <script defer src="./voice.js"></script>
+</head>
+<body>
+  <main>
+    <header><h1>Editable Voice Input</h1></header>
+    <section id="messages" aria-label="消息" aria-live="polite"></section>
+    <section aria-label="语音输入" id="composer">
+      <textarea id="draft" aria-label="消息草稿" hidden></textarea>
+      <details id="suggestion" hidden><summary>转写文字</summary><p></p></details>
+      <div class="controls">
+        <button type="button" id="mode">转文字</button>
+        <button type="button" id="hold" aria-describedby="status">按住说话，松开发送</button>
+        <button type="button" id="mic" hidden>听写</button>
+        <button type="button" id="cancel" hidden>取消</button>
+        <button type="button" id="send-text" hidden>发送</button>
+      </div>
+      <p id="status" role="status" aria-live="polite"></p>
+    </section>
+  </main>
+</body>
+</html>

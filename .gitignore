@@ -3,6 +3,8 @@ dist/
 .next/
 .turbo/
 coverage/
+test-results/
+playwright-report/
 release-packs/
 *.tsbuildinfo
 .env

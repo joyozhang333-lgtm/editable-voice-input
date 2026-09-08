@@ -34,6 +34,13 @@ export interface VoiceCaptureSession {
   cancel(): void;
 }
 
+/** Injectable capture boundary shared by framework-neutral and React controllers. */
+export interface VoiceCaptureController {
+  start(): Promise<VoiceCaptureSession>;
+  cancel(): void;
+  dispose(): void;
+}
+
 interface Deferred<T> {
   promise: Promise<T>;
   resolve(value: T): void;

@@ -33,6 +33,14 @@ V0954 currently uses its own voice implementation and does not import this SDK.
 
 ## Quick start
 
+### Minimal Press-to-Talk (Vanilla JS or React)
+
+The new framework-neutral `PressToTalkController` supports hold/release-to-send, slide-up cancellation, click/keyboard dictation, and stale-transcript protection. A single `onCommit({ audio, intent: "send" | "dictate", sessionKey, recordingId, signal, source })` hands control to the host. Return text for dictate to edit a draft; the send path can transcribe and then send audio plus a text copy through the host's existing workflow. No Web Speech or storage is enabled.
+
+Use `PressToTalkInput` for the minimal React UI, or `bindPressToTalk` with native buttons. `pnpm build:vendor` produces a lightweight `window.EditableVoiceInputCore` IIFE, browser ESM, and a self-contained Node CJS server/provider bundle. See the [complete API and vendoring contract](./docs/press-to-talk.md) ([中文](./docs/press-to-talk.zh-CN.md)). Existing hooks/components remain compatible.
+
+### Existing Editable Input
+
 ```tsx
 import { EditableVoiceInput } from "@editable-voice-input/react";
 import "@editable-voice-input/react/styles.css";
@@ -172,12 +180,13 @@ Interactive targets are at least 44 px and textarea text is 16 px by default for
 
 ## Examples
 
-- `examples/vite-react`: both editable dictation and a memory-only direct-audio transport.
+- `examples/vite-react`: minimal press-to-talk composer with tab-memory audio playback; the previous dual-mode example remains in `src/LegacyApp.tsx` and `src/legacy.css`.
+- `examples/vanilla`: no-framework IIFE integration with explicit send/dictate intent.
 - `examples/next-app-router`: a Next.js development demo using the server and provider packages. It deliberately returns 503 in production until `authorizeExample` is replaced with your authenticated session check.
 
 All example text and IDs are fictional. The Vite direct-audio demo creates only tab-scoped object URLs. No real storage service, recording, account, or credential is included.
 
-The Vite editable-dictation demo proxies `/api/transcribe` to `http://localhost:3001`. Start a compatible raw-audio transcription endpoint there before testing its batch fallback. The direct-audio tab is memory-only and does not require that proxy.
+The Vite demo proxies `/api/transcribe` to `http://localhost:3001`. Start a compatible raw-audio transcription endpoint there for both voice messages and dictation. Messages remain in this tab; no storage endpoint is included. Browser tests use synthetic microphone input and mock transcription, not a live provider.
 
 To run the Next development example, copy its `.env.example` to `.env.local`, provide a server-side provider key/base URL, then run `pnpm --filter editable-voice-input-example-next-app-router dev`. Its production route is intentionally disabled until you replace `authorizeExample` with your application's session check.
 
@@ -189,6 +198,7 @@ This library does not persist audio or transcripts unless the host explicitly cr
 
 ```bash
 corepack pnpm install --frozen-lockfile
+pnpm exec playwright install chromium
 pnpm check
 ```
 

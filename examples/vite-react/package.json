@@ -4,10 +4,12 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "dev": "vite --host 127.0.0.1",
     "build": "vite build",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@editable-voice-input/core": "workspace:*",
     "@editable-voice-input/react": "workspace:*",
     "react": "19.2.1",
     "react-dom": "19.2.1"

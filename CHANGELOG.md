@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased (0.2 Beta)
+
+- Added framework-neutral `PressToTalkController` and `bindPressToTalk`, reusing MediaRecorder capture with explicit `onCommit` send/dictate intent.
+- Added pointer hold/release, slide cancellation, accessible activation and permission/lifecycle/session fences. Late dictation preserves user edits and never sends text.
+- Added a minimal `PressToTalkInput` React component, vanilla integration example, and synthetic microphone browser tests.
+- Added reproducible browser IIFE/ESM and self-contained Node server/provider CJS vendor builds, transitive dependency notices, SHA-256 manifests and isolated consumer checks.
+- Kept the existing package versions at `0.2.0-beta.1` with a pending Changeset; no npm release or audio-storage endpoint is included.
+
 ## 0.2.0-beta.1
 
 - Added two explicit voice paths: direct-audio messages and editable dictation.

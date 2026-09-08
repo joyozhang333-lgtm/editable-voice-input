@@ -1,6 +1,7 @@
 export * from "./capture-controller";
 export * from "./dual-mode-voice-input";
 export * from "./editable-voice-input";
+export * from "./press-to-talk-input";
 export * from "./use-direct-audio-message";
 export * from "./use-dual-mode-voice-input";
 export * from "./use-editable-dictation";

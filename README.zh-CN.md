@@ -1,5 +1,18 @@
 # Editable Voice Input
 
+## 极简按住说话
+
+新增不依赖框架的 `PressToTalkController`：默认按住录音、松开发送，上滑取消；可把当前录音转文字编辑，也可用文字模式旁的小 mic 点击/键盘听写。唯一宿主回调为 `onCommit({ audio, intent: "send" | "dictate", sessionKey, recordingId, signal, source })`。
+
+`send` 可由宿主识别后，把可回放音频和文字副本交给同一发送流程；`dictate` 返回 `{ text }`，仅安全回填草稿或保留建议，不自动发送。转写晚回不会覆盖用户编辑或落入另一会话。权限待决时松手、取消、页面隐藏和非用户停止均不能误发。无 Web Speech 依赖，无新增服务端录音存储；IndexedDB 存储是否开启及其身份隔离由宿主决定。
+
+- 极简 React：`PressToTalkInput`，一个模式切换、一个录音区，无模式 tabs。
+- Vanilla JS：`bindPressToTalk(button, controller)`，处理 Pointer Capture、取消、键盘激活与兼容 click 去重。
+- `pnpm build:vendor`：输出 `window.EditableVoiceInputCore` IIFE、browser ESM 和自包含 `server.bundle.cjs`。
+- [固定 API、接入示例与安全边界](./docs/press-to-talk.zh-CN.md) · [English contract](./docs/press-to-talk.md)
+
+旧版 hooks 和组件 API 保持兼容。Vite 默认示例已替换为极简输入；旧双模式示例保留在 `examples/vite-react/src/LegacyApp.tsx` / `legacy.css`。Vite 两条语音路径均需 localhost:3001 的 `/api/transcribe` 服务。Vanilla 示例见 `examples/vanilla`，只提供静态 UI，识别路由须由宿主提供。浏览器自动化使用合成麦克风音频和模拟识别结果，不等同于真实手机或服务商验收。
+
 说话 → 编辑文字，或直接发送录音。
 
 Editable Voice Input 是一个小而清晰、与转写服务无关的 Web 语音输入工具包。它明确区分两类产品能力：可编辑的实时听写，以及作为一等消息存在的原始录音。
@@ -124,7 +137,7 @@ MediaStream track 结束、页面隐藏或离开时，录音会安全停止并�
 
 `examples/next-app-router` 仅作为本地开发示例；生产构建会返回 503，直到你把 `authorizeExample` 替换为产品真实的会话鉴权。多实例部署时，限流应使用共享且原子的存储。
 
-`examples/vite-react` 的可编辑听写会把 `/api/transcribe` 代理到 `http://localhost:3001`。测试停止后的 batch fallback 前，必须先在该端口启动兼容的原始音频转写接口；直接语音 tab 只使用当前页面内存，不依赖此代理。
+`examples/vite-react` 会把 `/api/transcribe` 代理到 `http://localhost:3001`。当前极简示例的语音消息与听写均使用该接口，请先在该端口启动兼容的原始音频转写服务。示例回放仅使用当前页面内存，不包含录音存储接口；旧双模式示例仅作为 `LegacyApp.tsx` / `legacy.css` 源码保留。
 
 运行 Next 开发示例前，把其中的 `.env.example` 复制为 `.env.local`，填入仅服务端可见的转写供应商配置，然后执行 `pnpm --filter editable-voice-input-example-next-app-router dev`。
 
@@ -136,6 +149,7 @@ MediaStream track 结束、页面隐藏或离开时，录音会安全停止并�
 
 ```bash
 corepack pnpm install --frozen-lockfile
+pnpm exec playwright install chromium
 pnpm check
 ```
 

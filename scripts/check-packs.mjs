@@ -140,6 +140,9 @@ import * as guichu from "@editable-voice-input/adapter-guichu";
 for (const value of [core, react, server, provider, guichu]) {
   if (!Object.keys(value).length) throw new Error("Empty ESM export");
 }
+for (const value of [core.PressToTalkController, core.bindPressToTalk, react.PressToTalkInput]) {
+  if (typeof value !== "function") throw new Error("Missing PressToTalk ESM API");
+}
 const cssPath = fileURLToPath(import.meta.resolve("@editable-voice-input/react/styles.css"));
 if (!existsSync(cssPath)) throw new Error("Missing exported CSS");
 `
@@ -156,6 +159,11 @@ if (!existsSync(cssPath)) throw new Error("Missing exported CSS");
   "@editable-voice-input/adapter-guichu"
 ]) {
   if (!Object.keys(require(name)).length) throw new Error("Empty CJS export: " + name);
+}
+const core = require("@editable-voice-input/core");
+const react = require("@editable-voice-input/react");
+for (const value of [core.PressToTalkController, core.bindPressToTalk, react.PressToTalkInput]) {
+  if (typeof value !== "function") throw new Error("Missing PressToTalk CJS API");
 }
 `
   );
@@ -179,6 +187,12 @@ declare const claimApi: GuichuVoiceClaimApi;
 declare const claimInput: Parameters<typeof claimGuichuIndexedDbOutboxRecord>[0];
 const receipt: Promise<GuichuVoiceClaimReceipt> = claimApi.claimOrReconcile({ source: claimInput.sourceContext, target: claimInput.targetContext, clientTurnId: claimInput.clientTurnId });
 void receipt;
+import { PressToTalkController, bindPressToTalk, type VoiceCaptureController } from "@editable-voice-input/core";
+import { PressToTalkInput } from "@editable-voice-input/react";
+const press = new PressToTalkController({ sessionKey: "synthetic", onCommit: async ({ intent, signal }) => {
+  if (intent === "dictate" && !signal.aborted) return { text: "Synthetic transcript" };
+} });
+void press; void bindPressToTalk; void PressToTalkInput; let capture: VoiceCaptureController; void capture!;
 `
   );
   writeFileSync(
@@ -199,6 +213,12 @@ declare const claimApi: GuichuVoiceClaimApi;
 declare const claimInput: Parameters<typeof claimGuichuIndexedDbOutboxRecord>[0];
 const receipt: Promise<GuichuVoiceClaimReceipt> = claimApi.claimOrReconcile({ source: claimInput.sourceContext, target: claimInput.targetContext, clientTurnId: claimInput.clientTurnId });
 void receipt;
+import { PressToTalkController, bindPressToTalk, type VoiceCaptureController } from "@editable-voice-input/core";
+import { PressToTalkInput } from "@editable-voice-input/react";
+const press = new PressToTalkController({ sessionKey: "synthetic", onCommit: async ({ intent, signal }) => {
+  if (intent === "dictate" && !signal.aborted) return { text: "Synthetic transcript" };
+} });
+void press; void bindPressToTalk; void PressToTalkInput; let capture: VoiceCaptureController; void capture!;
 `
   );
   writeFileSync(
