@@ -1,5 +1,18 @@
 # Editable Voice Input
 
+## 极简按住说话
+
+新增不依赖框架的 `PressToTalkController`：默认按住录音、松开发送，上滑取消；可把当前录音转文字编辑，也可用文字模式旁的小 mic 点击/键盘听写。唯一宿主回调为 `onCommit({ audio, intent: "send" | "dictate", sessionKey, recordingId, signal, source })`。
+
+`send` 可由宿主识别后，把可回放音频和文字副本交给同一发送流程；`dictate` 返回 `{ text }`，仅安全回填草稿或保留建议，不自动发送。转写晚回不会覆盖用户编辑或落入另一会话。权限待决时松手、取消、页面隐藏和非用户停止均不能误发。无 Web Speech 依赖，无新增服务端录音存储；IndexedDB 存储是否开启及其身份隔离由宿主决定。
+
+- 极简 React：`PressToTalkInput`，一个模式切换、一个录音区，无模式 tabs。
+- Vanilla JS：`bindPressToTalk(button, controller)`，处理 Pointer Capture、取消、键盘激活与兼容 click 去重。
+- `pnpm build:vendor`：输出 `window.EditableVoiceInputCore` IIFE、browser ESM 和自包含 `server.bundle.cjs`。
+- [固定 API、接入示例与安全边界](./docs/press-to-talk.zh-CN.md) · [English contract](./docs/press-to-talk.md)
+
+旧版 hooks 和组件 API 保持兼容。Vite 默认示例已替换为极简输入；旧双模式示例保留在 `examples/vite-react/src/LegacyApp.tsx` / `legacy.css`。Vite 两条语音路径均需 localhost:3001 的 `/api/transcribe` 服务。Vanilla 示例见 `examples/vanilla`，只提供静态 UI，识别路由须由宿主提供。浏览器自动化使用合成麦克风音频和模拟识别结果，不等同于真实手机或服务商验收。
+
 说话 → 编辑文字，或直接发送录音。
 
 Editable Voice Input 是一个小而清晰、与转写服务无关的 Web 语音输入工具包。它明确区分两类产品能力：可编辑的实时听写，以及作为一等消息存在的原始录音。

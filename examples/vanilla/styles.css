@@ -1,0 +1,22 @@
+:root { font: 16px/1.5 system-ui, sans-serif; color: #202427; background: #edf0f2; letter-spacing: 0; }
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; }
+main { max-width: 680px; margin: auto; min-height: 100dvh; display: flex; flex-direction: column; background: white; }
+header { padding: 20px; border-bottom: 1px solid #e3e7e9; }
+h1 { margin: 0; font-size: 18px; }
+#messages { flex: 1; padding: 20px; }
+article { margin: 0 0 16px auto; padding: 12px; max-width: 90%; background: #e7f4ec; border-radius: 8px; overflow-wrap: anywhere; }
+article p { margin: 0; white-space: pre-wrap; }
+audio { width: 100%; }
+#composer { border-top: 1px solid #e3e7e9; padding: 16px; }
+.controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+button { min-width: 44px; min-height: 44px; font: inherit; background: #f4f5f6; color: #202427; border: 1px solid #dce0e3; border-radius: 8px; cursor: pointer; padding: 8px; }
+button:focus-visible, textarea:focus-visible { outline: 2px solid #147d53; outline-offset: 2px; }
+#hold { flex: 1; min-width: 140px; min-height: 64px; touch-action: none; -webkit-touch-callout: none; }
+#hold[aria-pressed="true"] { background: #e4f3eb; }
+#hold[data-cancelling="true"] { background: #fce9ec; color: #b92c42; }
+textarea { width: 100%; min-height: 108px; font: inherit; margin-bottom: 8px; border: 1px solid #dce0e3; border-radius: 8px; padding: 12px; }
+#status { min-height: 24px; margin: 8px 0 0; color: #63696e; font-size: 14px; overflow-wrap: anywhere; }
+#send-text { margin-left: auto; background: #147d53; color: white; }
+button:disabled { opacity: 0.5; cursor: default; }

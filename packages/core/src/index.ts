@@ -6,5 +6,7 @@ export * from "./indexeddb-outbox";
 export * from "./mime";
 export * from "./object-url";
 export * from "./outbox";
+export * from "./press-to-talk";
+export * from "./press-to-talk-dom";
 export * from "./types";
 export * from "./web-speech";

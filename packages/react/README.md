@@ -1,5 +1,9 @@
 # @editable-voice-input/react
 
+`PressToTalkInput` is the minimal, optional UI for a host-owned core `PressToTalkController`. It has one mode switch and recording area, plus a text-mode mic, editable draft, and optional explicit `onSubmitText({ text, sessionKey })`. Pass `controller`, optional `labels`, `className`, and `onSubmitText`. Unmount cancels pending work; hosts change account/conversation scope with `controller.setSession(...)` and dispose their controller when no longer needed. No transcription result ever invokes `onSubmitText`.
+
+See the [full PressToTalk contract](../../docs/press-to-talk.md). Existing components and hooks remain unchanged.
+
 React adapters for three compatible paths: the original batch `useVoiceInput`/`EditableVoiceInput`, live editable `useEditableDictation`, and first-class audio `useDirectAudioMessage`. `useDualModeVoiceInput` coordinates the latter two as a headless composer. All async actions are single-flight and late results are detached from cancelled operations.
 
 ```tsx
