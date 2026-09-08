@@ -103,6 +103,8 @@ const POST = createTranscriptionHandler({
 
 `POST` consumes a standard `Request` and returns a `Response`. A Node HTTP framework must adapt its request/response without bypassing the existing bounded-body, Origin, authentication, quota and duration validation. The included handler does not persist recordings. `vendor:check` imports IIFE/ESM and executes the CJS handler with real synthetic WAV duration parsing and a mock provider in a directory without node_modules, rejecting non-builtin runtime requires.
 
+**The bundled default inspector does not accept every browser Blob.** Live WebM may play correctly but lack duration metadata; `inspectAudioDurationMs` then returns 415 before ASR. `duration: true` does not fix this in the pinned Matroska parser. Inject a host-validated `AudioDurationInspector` as `inspectDurationMs` when needed; see the [interface, example and resource/security requirements](../packages/server/README.md#duration-inspection-and-live-webm). No fallback decoder is bundled, and mocked browser transcription tests do not establish real server/container compatibility.
+
 ## Examples and Verification
 
 - `examples/vite-react`: the new minimal composer; `/api/transcribe` proxies to localhost:3001. Start a host transcription endpoint there for real transcription.

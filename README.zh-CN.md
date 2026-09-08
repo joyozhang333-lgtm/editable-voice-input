@@ -133,13 +133,55 @@ Web Speech 与 MediaRecorder 是两种独立能力。Chromium 通常支持前者
 
 MediaStream track 结束、页面隐藏或离开时，录音会安全停止并释放麦克风，避免后台继续采集。音频会带上 `terminationReason`；这类生命周期停止不会被当成用户主动“停止即发送”。
 
-服务端处理器默认要求传入 `authorize`，没有鉴权就会拒绝创建；只有明确要做公共接口时才能设置 `allowUnauthenticated: true`。`consumeQuota` 用于在解析和调用上游前接入用户/IP 级限流或额度控制。默认要求 `Origin` 且只接受同源浏览器请求；非浏览器服务端客户端必须明确设置 `allowMissingOrigin: true`，并继续执行鉴权。处理器也会读取音频容器的真实时长，不能只靠压缩后字节数绕过 120 秒限制。
+服务端处理器默认要求传入 `authorize`，没有鉴权就会拒绝创建；只有明确要做公共接口时才能设置 `allowUnauthenticated: true`。`consumeQuota` 用于在解析和调用上游前接入用户/IP 级限流或额度控制。默认要求 `Origin` 且只接受同源浏览器请求；非浏览器服务端客户端必须明确设置 `allowMissingOrigin: true`，并继续执行鉴权。处理器在调用 provider 前还要求服务端 inspector 返回有限、正数且不超上限的时长；默认实现依赖容器元数据，并不保证接受任意浏览器 Blob，详见下节。
 
 `examples/next-app-router` 仅作为本地开发示例；生产构建会返回 503，直到你把 `authorizeExample` 替换为产品真实的会话鉴权。多实例部署时，限流应使用共享且原子的存储。
 
 `examples/vite-react` 会把 `/api/transcribe` 代理到 `http://localhost:3001`。当前极简示例的语音消息与听写均使用该接口，请先在该端口启动兼容的原始音频转写服务。示例回放仅使用当前页面内存，不包含录音存储接口；旧双模式示例仅作为 `LegacyApp.tsx` / `legacy.css` 源码保留。
 
 运行 Next 开发示例前，把其中的 `.env.example` 复制为 `.env.local`，填入仅服务端可见的转写供应商配置，然后执行 `pnpm --filter editable-voice-input-example-next-app-router dev`。
+
+## 服务端时长检查与 live WebM
+
+**浏览器能录音、Blob 能回放，不等于默认 `inspectAudioDurationMs` 能读取时长。** `MediaRecorder` 的 live/分块 WebM 可能没有 Segment Info 中的 duration 字段。当前锁定的 `music-metadata@11.15.0` [Matroska parser](https://github.com/Borewit/music-metadata/blob/v11.15.0/lib/matroska/MatroskaParser.ts) 从该字段读取时长，并跳过音频 clusters；SDK 已传入 `duration: true`，但它不能为这种 WebM 从音频帧推导缺失的时长。缺元数据不一定表示空音或音频不可播放，换 MIME 也不是通用修复。
+
+时长缺失、非有限数或不大于零，处理器返回 **415 / `invalid-audio-duration`**；超过 `maxDurationMs` 返回 **413 / `audio-too-long`**。两者都不会调用转写 provider。默认元数据检查不是完整解码，也不能证明不可信元数据与实际播放时长一致；不能拿客户端录音计时或转写完成后的 provider 元数据替代调用前的服务端校验。
+
+### 注入 AudioDurationInspector
+
+真实导出签名为 `(audio: Uint8Array, mimeType: SupportedAudioMimeType) => number | Promise<number>`，返回单位是**毫秒**。通过处理器的 `inspectDurationMs` 选项注入：
+
+```ts
+import {
+  createTranscriptionHandler,
+  type AudioDurationInspector
+} from "@editable-voice-input/server";
+// 宿主自行实现并验证的模块，不是 SDK 导出或内置 decoder。
+import { inspectBoundedDecodedDurationMs } from "./host-audio-duration";
+
+const inspectDurationMs: AudioDurationInspector = (audio, mimeType) =>
+  inspectBoundedDecodedDurationMs(audio, mimeType);
+
+const handle = createTranscriptionHandler({
+  provider,
+  authorize: authenticateHostRequest,
+  consumeQuota: consumeHostQuota,
+  maxBytes: 8 * 1024 * 1024,
+  maxDurationMs: 120_000,
+  inspectDurationMs
+});
+```
+
+处理器先鉴权、扣限额、限制请求体大小并验证文件签名/MIME，再把完整字节和规范化 MIME 交给 inspector；返回后仍会检查时长上限。普通异常或 Promise rejection 转为 415；`TranscriptionServerError` 则保留其公开 code/status，因此不能把私有 decoder 日志放进该错误消息。`server.bundle.cjs` 同样接受此选项，但不包含 FFmpeg 可执行文件或兜底 decoder。
+
+### 自定义实现的安全要求
+
+- 必须在服务端检查上传字节；不能返回常量、信任客户端 `durationMs`、按压缩后字节数估算，或把超长结果截成允许上限。缺失、非法、不支持、截断的输入和检查失败都应拒绝。
+- 若采用有界 PCM 解码计时（例如宿主管理的 FFmpeg 进程），需校验所选音轨、输出采样格式/采样率/声道数，按实际解码样本计时；不能把容器元数据或录音墙钟时间当作结果。达到输出上限或解码被截断必须拒绝，不能把部分解码时长当成完整时长。本库不提供或声称验证任何 decoder 实现/命令。
+- 在 inspector/worker 内限制输入、解码输出、CPU、内存、墙钟时间和并发。当前接口**不传入 AbortSignal 或 maxDurationMs**，宿主应通过配置/闭包传递边界；处理器返回后的时长检查不能限制解码资源。单独 `Promise.race` 超时不会结束子进程，必须终止、回收并清理。
+- 把媒体当作不可信输入：维护并隔离 decoder、最小权限、禁止网络/外部资源访问、限制协议/格式，不能把不可信值拼接进 shell。保留鉴权、Origin、限流、字节/MIME 限制和时长校验。
+- 优先有界内存管道；如确需临时文件，应隔离权限并在成功/失败后清理，不默认记录或持久化原始录音。存储策略仍由宿主负责。
+- 使用目标浏览器的实际录音验证服务端 inspector 与 provider 整链，覆盖无时长 WebM、超长、损坏/截断及 decoder 超时。模拟转写的浏览器测试不覆盖此边界。
 
 ## 隐私边界
 

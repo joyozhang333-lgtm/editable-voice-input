@@ -132,6 +132,8 @@ The claim helper moves exactly one `clientTurnId`. For several pending rows, the
 
 ### Server route
 
+**Browser recording support is not default server-inspection compatibility.** Live WebM from `MediaRecorder` can omit duration metadata even when the Blob plays correctly. The default `inspectAudioDurationMs` then fails closed with HTTP 415 (`invalid-audio-duration`) before calling the provider. `duration: true` is already enabled; it does not derive duration from WebM audio frames in the pinned parser. For these recordings, inject a host-validated `AudioDurationInspector` via `inspectDurationMs`; see [the real interface, injection example and safety requirements](./packages/server/README.md#duration-inspection-and-live-webm). The SDK does not bundle a fallback decoder.
+
 ```ts
 import { createTranscriptionHandler } from "@editable-voice-input/server";
 import { createOpenAICompatibleProvider } from "@editable-voice-input/provider-openai-compatible";
@@ -160,7 +162,7 @@ Keep provider credentials on the server. The handler requires an authentication 
 
 The capture layer negotiates formats in this order: Opus WebM, WebM, MP4, Opus Ogg, Ogg. Safari commonly selects MP4; Chromium commonly selects WebM. Capture requires HTTPS (or localhost) and user-granted microphone permission.
 
-Default limits are 120 seconds and 8 MiB. Hosts can lower them. The server package verifies the declared content type, file signature, and real container duration before calling the transcription provider.
+Default limits are 120 seconds and 8 MiB. Hosts can lower them. Before calling the transcription provider, the server validates the declared content type and file signature, then requires a finite positive server-inspected duration within the limit. The default inspector reads metadata, not decoded playback length; it does not accept every browser-produced Blob. See the [live WebM limitation](./packages/server/README.md#duration-inspection-and-live-webm).
 
 Web Speech recognition availability is separate from MediaRecorder support. Chromium generally exposes it; iOS Safari support and behavior vary by OS version and may stop on silence or when the page backgrounds. Always feature-detect, retain typed text, and keep batch-only dictation as a fallback. Capture safely stops when its media track ends or the page is hidden/unloaded. Lifecycle-stopped audio is marked with a `terminationReason`, remains reviewable while the page survives, and is never treated as an explicit stop-to-send action.
 

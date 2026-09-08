@@ -73,3 +73,5 @@ pnpm vendor:check
 - `dist/vendor/LICENSE`、`THIRD_PARTY_NOTICES.md`、`manifest.json`：随 vendoring 产物一起保留；manifest 包含版本、字节数和 SHA-256。
 
 源码构建不发布 npm。将 browser 产物放入宿主静态资源目录；server bundle 仅供服务端 require，不能发送到浏览器。服务端使用标准 Request/Response API，原生 Node HTTP 应用需自行适配并保留认证、Origin、限流和请求大小校验。
+
+**默认 inspector 不保证接受任意浏览器 Blob。** live WebM 即使可回放，也可能因缺少时长元数据而被 `inspectAudioDurationMs` 以 415 拒绝，且不会调用 ASR；当前 Matroska parser 的 `duration: true` 不能补出该时长。需要时通过 `inspectDurationMs` 注入宿主验证过的 `AudioDurationInspector`，详见[真实接口、注入示例及安全要求](../README.zh-CN.md#服务端时长检查与-live-webm)。bundle 不包含兜底 decoder，模拟转写的浏览器测试不能证明真实服务端容器兼容性。
