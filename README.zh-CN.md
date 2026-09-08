@@ -137,7 +137,7 @@ MediaStream track 结束、页面隐藏或离开时，录音会安全停止并�
 
 `examples/next-app-router` 仅作为本地开发示例；生产构建会返回 503，直到你把 `authorizeExample` 替换为产品真实的会话鉴权。多实例部署时，限流应使用共享且原子的存储。
 
-`examples/vite-react` 的可编辑听写会把 `/api/transcribe` 代理到 `http://localhost:3001`。测试停止后的 batch fallback 前，必须先在该端口启动兼容的原始音频转写接口；直接语音 tab 只使用当前页面内存，不依赖此代理。
+`examples/vite-react` 会把 `/api/transcribe` 代理到 `http://localhost:3001`。当前极简示例的语音消息与听写均使用该接口，请先在该端口启动兼容的原始音频转写服务。示例回放仅使用当前页面内存，不包含录音存储接口；旧双模式示例仅作为 `LegacyApp.tsx` / `legacy.css` 源码保留。
 
 运行 Next 开发示例前，把其中的 `.env.example` 复制为 `.env.local`，填入仅服务端可见的转写供应商配置，然后执行 `pnpm --filter editable-voice-input-example-next-app-router dev`。
 
@@ -149,6 +149,7 @@ MediaStream track 结束、页面隐藏或离开时，录音会安全停止并�
 
 ```bash
 corepack pnpm install --frozen-lockfile
+pnpm exec playwright install chromium
 pnpm check
 ```
 

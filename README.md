@@ -198,6 +198,7 @@ This library does not persist audio or transcripts unless the host explicitly cr
 
 ```bash
 corepack pnpm install --frozen-lockfile
+pnpm exec playwright install chromium
 pnpm check
 ```
 
