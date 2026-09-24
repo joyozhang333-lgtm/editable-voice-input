@@ -23,6 +23,11 @@ export interface TranscriptionHandlerOptions {
   allowUnauthenticated?: boolean;
   consumeQuota?: (request: Request) => void | Response | Promise<void | Response>;
   language?: string | ((request: Request) => string | undefined | Promise<string | undefined>);
+  /** Optional host policy, e.g. Traditional-to-Simplified Chinese for zh-CN. Off by default. */
+  postprocessTranscript?: (
+    text: string,
+    context: { requestedLanguage?: string; providerLanguage?: string }
+  ) => string | Promise<string>;
   responseHeaders?: HeadersInit;
 }
 
@@ -223,8 +228,8 @@ export function createTranscriptionHandler(
         ...(language ? { language } : {}),
         signal: request.signal
       });
-      const text = (typeof result === "string" ? result : result.text).trim();
-      if (!text) {
+      const rawText = (typeof result === "string" ? result : result.text).trim();
+      if (!rawText) {
         throw new TranscriptionServerError(
           "empty-transcript",
           "No speech was recognized in the recording.",
@@ -233,6 +238,20 @@ export function createTranscriptionHandler(
       }
 
       const metadata = typeof result === "string" ? null : result;
+      const processedText = options.postprocessTranscript
+        ? await options.postprocessTranscript(rawText, {
+          ...(language ? { requestedLanguage: language } : {}),
+          ...(metadata?.language ? { providerLanguage: metadata.language } : {})
+        })
+        : rawText;
+      const text = typeof processedText === "string" ? processedText.trim() : "";
+      if (!text) {
+        throw new TranscriptionServerError(
+          "empty-transcript",
+          "No speech was recognized in the recording.",
+          422
+        );
+      }
       const providerDurationMs = metadata?.durationMs ??
         (metadata?.durationSeconds !== undefined ? metadata.durationSeconds * 1_000 : undefined);
       return json(

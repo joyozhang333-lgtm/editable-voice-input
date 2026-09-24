@@ -23,6 +23,23 @@ Authentication and quota callbacks are integration points, not bundled identity 
 
 Successful responses use `durationMs`. Providers that still return the deprecated `durationSeconds` field are accepted and normalized at the server boundary.
 
+## Optional transcript postprocessing
+
+The server does not change scripts by default. A host that promises simplified Chinese can opt into `postprocessTranscript` after ASR and before returning the editable text:
+
+```ts
+const handle = createTranscriptionHandler({
+  provider,
+  authorize: authenticateHostRequest,
+  inspectDurationMs: hostDurationInspector,
+  language: "zh-CN",
+  postprocessTranscript: (text, { requestedLanguage }) =>
+    requestedLanguage === "zh-CN" ? hostTraditionalToSimplified(text) : text
+});
+```
+
+`hostTraditionalToSimplified` is an injected, server-side converter selected and tested by the product; no converter or dependency is bundled. The callback receives the requested language and the provider-reported language, may be async, and must return nonempty text. It is never an excuse to bypass the existing authorization, duration, MIME or quota checks. The original ASR result and recognizer language are not rewritten in the provider; only the returned editable text is postprocessed. Callback errors return a generic 502 without leaking converter diagnostics.
+
 ## Duration inspection and live WebM
 
 `inspectAudioDurationMs` calls `music-metadata` with `{ duration: true }`. In the pinned version 11.15.0, the [Matroska parser](https://github.com/Borewit/music-metadata/blob/v11.15.0/lib/matroska/MatroskaParser.ts) obtains duration from Segment Info and skips audio clusters; that option does not derive missing WebM duration from frames. `MediaRecorder` can produce live/chunked WebM without this field. This is not necessarily empty or unplayable audio, and MIME support/signature validation does not establish duration availability. Other formats also require validation against the actual browser output; changing MIME is not a universal fix.

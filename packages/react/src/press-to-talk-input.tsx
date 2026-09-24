@@ -19,6 +19,7 @@ export interface PressToTalkLabels {
   transcribing: string;
   committing: string;
   suggestion: string;
+  retryTranscription: string;
   holdAccessible: string;
   releaseAccessible: string;
 }
@@ -29,7 +30,8 @@ const defaults: PressToTalkLabels = {
   draft: "Message", dictate: "Dictate text", stopDictation: "Stop dictation",
   cancel: "Cancel", submitText: "Send text", requesting: "Waiting for microphone permission",
   stopping: "Finishing recording", transcribing: "Transcribing", committing: "Processing voice message",
-  suggestion: "Transcript", holdAccessible: "Hold to talk, release to send. Activate to start recording.",
+  suggestion: "Transcript", retryTranscription: "Retry transcription",
+  holdAccessible: "Hold to talk, release to send. Activate to start recording.",
   releaseAccessible: "Release to send. Activate to stop and send."
 };
 
@@ -119,6 +121,11 @@ export function PressToTalkInput({ controller, labels: overrides, className, onS
       </div>
       <p id={`${id}-status`} className={state.error ? "evi-status is-error" : "evi-status"}
         role="status" aria-live="polite">{status}</p>
+      {state.canRetryTranscription ? (
+        <button type="button" className="evi-ptt-retry" onClick={() => void controller.retryTranscription()}>
+          {labels.retryTranscription}
+        </button>
+      ) : null}
     </section>
   );
 }

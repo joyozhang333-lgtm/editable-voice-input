@@ -82,4 +82,20 @@ describe("PressToTalkInput", () => {
     expect(onCommit).not.toHaveBeenCalled();
     controller.dispose();
   });
+
+  it("shows an explicit retry only for failed transcription, then reuses the take", async () => {
+    const { controller, onCommit, capture, finish } = setup();
+    onCommit.mockRejectedValueOnce(new Error("temporary ASR outage"));
+    fireEvent.click(screen.getByRole("button", { name: "Edit text" }));
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Dictate text" })));
+    fireEvent.click(screen.getByRole("button", { name: "Stop dictation" }));
+    await finish();
+    expect(screen.getByRole("button", { name: "Retry transcription" })).toBeTruthy();
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Retry transcription" })));
+    expect(onCommit).toHaveBeenCalledTimes(2);
+    expect(capture.start).toHaveBeenCalledOnce();
+    expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("Synthetic transcript");
+    expect(screen.queryByRole("button", { name: "Retry transcription" })).toBeNull();
+    controller.dispose();
+  });
 });

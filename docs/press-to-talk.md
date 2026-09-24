@@ -28,7 +28,7 @@ const unsubscribe = voice.subscribe(() => render(voice.getSnapshot()));
 render(voice.getSnapshot());
 ```
 
-`onCommit` returns `void | string | TranscriptionResult` or a Promise of that union. Only the dictate branch consumes returned text. Send return values never modify the draft. There is at most one callback per recording and no automatic retry. `idle` after the callback means host processing returned, not that a server receipt was verified. A host whose send result is uncertain must reconcile by `recordingId`, not blindly create another message.
+`onCommit` returns `void | string | TranscriptionResult` or a Promise of that union. Only the dictate branch consumes returned text. Send return values never modify the draft. There is one callback per recording by default and no automatic retry. After a completed dictate take fails transcription, `canRetryTranscription` becomes true; `retryTranscription()` explicitly calls the host again with the same in-memory audio and `recordingId`, but a fresh `AbortSignal`, without reacquiring the microphone. It never retries a send. `idle` after the callback means host processing returned, not that a server receipt was verified. A host whose send result is uncertain must reconcile by `recordingId`, not blindly create another message.
 
 For audio-plus-text messages, the send callback can transcribe first and then enter the host's existing send workflow. A host may keep playable audio only in its own identity-partitioned IndexedDB and send a text copy to its server. Neither the controller nor these examples enable persistence. Audio necessarily passes through transient server/provider memory for server transcription; the host is responsible for provider retention policy, authorization, local encryption, deletion, and exports. No audio-storage endpoint is added.
 
@@ -43,6 +43,7 @@ For audio-plus-text messages, the send callback can transcribe first and then en
 | `start({intent?} = {})` | Promise of void; click/keyboard alternative that does not require holding a key. Defaults to the current mode. |
 | `stop()` | Explicit stop using this take's intent. In send mode the button must communicate stop-to-send. Pending permission or armed cancel cancels instead. |
 | `stopToDictate()` | Changes the active recording to dictate and stops it. Pending permission is cancelled, never replayed. |
+| `retryTranscription()` | Explicitly retries only a failed, already captured dictate take. No-op without a retryable take; never replays send. |
 | `setMode("send" | "dictate")` | A mode change cancels in-flight work and preserves the text draft. Setting the same mode is a no-op. |
 | `setText(text)` | Registers an edit revision, including edits that restore the original value. |
 | `setSession(sessionKey, text = "")` | Always invalidates capture and asynchronous work, even with the same key; replaces the draft. |
@@ -51,7 +52,7 @@ For audio-plus-text messages, the send callback can transcribe first and then en
 | `subscribe(listener)` | Change notifications; returns unsubscribe. Read the first snapshot yourself. |
 | `dispose()` | Terminal cleanup; create another controller to reuse. |
 
-Snapshot fields: `phase`, `mode`, `text`, `transcriptSuggestion`, `cancelPending`, `sessionKey`, `recordingId`, `elapsedMs`, `error`. Phases: `idle`, `requesting-permission`, `recording`, `stopping`, `transcribing`, `committing`, `error`.
+Snapshot fields: `phase`, `mode`, `text`, `transcriptSuggestion`, `canRetryTranscription`, `cancelPending`, `sessionKey`, `recordingId`, `elapsedMs`, `error`. Phases: `idle`, `requesting-permission`, `recording`, `stopping`, `transcribing`, `committing`, `error`.
 
 Use `bindPressToTalk(button, controller)` for Pointer Capture, `pointercancel`/`lostpointercapture`, native Enter/Space or assistive activation, repeat suppression, Escape, and compatibility-click suppression. It sets/restores `touch-action` and `user-select`; its cleanup cancels work but does not terminally dispose the controller. The host supplies accessible labels, state feedback, and a visible click alternative (the React text-mode mic is one). Custom bindings must capture the accepted pointer, forward final coordinates and cancellation, and must not interpret the pointer's compatibility click as a second start. See the [Pointer Capture documentation](https://developer.mozilla.org/en-US/docs/Web/API/Element/setPointerCapture) and [pointercancel documentation](https://developer.mozilla.org/en-US/docs/Web/API/Element/pointercancel_event).
 
@@ -61,6 +62,7 @@ Use `bindPressToTalk(button, controller)` for Pointer Capture, `pointercancel`/`
 - Cancellation, hidden documents, pagehide, dispose, and mode/session changes fence both capture and host continuations. Lifecycle fencing stays active through final MediaRecorder events and the host callback, even if capture lifecycle options are disabled.
 - A duration limit, lost track, or another automatic stop never commits. Even custom capture adapters without `terminationReason` require explicit controller stop intent. Adapters should always supply the termination reason.
 - Dictation uses the draft and edit revision from recording start. An untouched draft receives the appended transcript. Any user edit puts the result in `transcriptSuggestion` instead. A stale recording or session discards the result entirely, even if the host ignores abort.
+- A failed dictate take is retained only in this controller's memory. Cancel, new recording, mode/session change, page hide/leave, and disposal erase retry eligibility and the audio. A second failure needs another explicit click. Edits during retry remain authoritative; late output is a suggestion.
 - The host must use the captured `sessionKey`, recheck `signal.aborted` and identity after every await before side effects, and invalidate on account changes via `setSession`. Cancellation cannot retract a request already delivered; authorization and idempotent server writes remain host responsibilities.
 - The controller never calls a text-send callback. Accepting/using a suggestion or submitting typed text is a separate host action.
 
@@ -76,6 +78,7 @@ import "@editable-voice-input/react/styles.css";
 ```
 
 The controller is owned by the host, not recreated on each render. Update its scope with `setSession`; the component cancels on unmount. It has one mode switch and recording area, no mode tabs. Text mode provides an editable textarea and click/keyboard mic. The recording-to-text action calls `stopToDictate`, never send. All labels can be localized; the example above overrides only three, so localize the other accessible/status labels in your product too.
+When a dictate take fails, the component renders an explicit retry button; localize its `retryTranscription` label too.
 
 ## Vendor Builds
 

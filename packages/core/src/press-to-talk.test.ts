@@ -360,3 +360,85 @@ describe("PressToTalk lifecycle and failures", () => {
     }
   });
 });
+
+describe("PressToTalk explicit transcription retry", () => {
+  it("retains a failed dictate take until an explicit retry, without recapturing or sending", async () => {
+    const onCommit = vi.fn<PressToTalkOptions["onCommit"]>()
+      .mockRejectedValueOnce(new Error("temporary ASR outage"))
+      .mockResolvedValueOnce({ text: "重试后的简体文字" });
+    const { controller: c, capture, result } = setup({ onCommit, defaultText: "原有草稿" });
+    const take = audio();
+    await c.start({ intent: "dictate" });
+    c.stop(); result.resolve(take); await flush();
+    expect(c.getSnapshot()).toMatchObject({ phase: "error", canRetryTranscription: true, text: "原有草稿" });
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    const first = onCommit.mock.calls[0]![0];
+    await c.retryTranscription();
+    expect(onCommit).toHaveBeenCalledTimes(2);
+    expect(onCommit.mock.calls[1]![0]).toMatchObject({
+      audio: take, intent: "dictate", recordingId: first.recordingId,
+      sessionKey: "session-a"
+    });
+    expect(onCommit.mock.calls[1]![0].signal).not.toBe(first.signal);
+    expect(first.signal.aborted).toBe(true);
+    expect(capture.start).toHaveBeenCalledOnce();
+    expect(c.getSnapshot()).toMatchObject({
+      phase: "idle", canRetryTranscription: false, text: "原有草稿\n重试后的简体文字"
+    });
+  });
+
+  it("never offers a resend retry for failed send, and clears a dictate take at scope boundaries", async () => {
+    const onCommit = vi.fn<PressToTalkOptions["onCommit"]>(async () => { throw new Error("offline"); });
+    const { controller: c, result } = setup({ onCommit });
+    await c.start({ intent: "send" }); c.stop(); result.resolve(audio()); await flush();
+    expect(c.getSnapshot().canRetryTranscription).toBe(false);
+    await c.retryTranscription();
+    expect(onCommit).toHaveBeenCalledOnce();
+
+    const second = deferred<CapturedAudio>();
+    const capture = { start: vi.fn(async () => ({
+      active: true, result: second.promise, stop: () => second.promise, cancel() {}
+    })), cancel: vi.fn(), dispose: vi.fn() };
+    const retry = new PressToTalkController({ sessionKey: "session-a", capture, onCommit });
+    controllers.push(retry);
+    await retry.start({ intent: "dictate" }); retry.stop(); second.resolve(audio()); await flush();
+    expect(retry.getSnapshot().canRetryTranscription).toBe(true);
+    retry.setSession("session-b", "other draft");
+    await retry.retryTranscription();
+    expect(onCommit).toHaveBeenCalledTimes(2);
+    expect(retry.getSnapshot()).toMatchObject({
+      sessionKey: "session-b", text: "other draft", canRetryTranscription: false
+    });
+  });
+
+  it("keeps edits made during a retry and offers the new transcript as a suggestion", async () => {
+    const second = deferred<{ text: string }>();
+    const onCommit = vi.fn<PressToTalkOptions["onCommit"]>()
+      .mockRejectedValueOnce(new Error("temporary ASR outage"))
+      .mockImplementationOnce(() => second.promise);
+    const { controller: c, result } = setup({ onCommit });
+    await c.start({ intent: "dictate" }); c.stop(); result.resolve(audio()); await flush();
+    const retry = c.retryTranscription();
+    c.setText("我改过的文字");
+    second.resolve({ text: "迟到的识别结果" });
+    await retry;
+    expect(c.getSnapshot()).toMatchObject({
+      text: "我改过的文字", transcriptSuggestion: "迟到的识别结果",
+      canRetryTranscription: false
+    });
+  });
+
+  it("drops retained audio when the page hides before the user retries", async () => {
+    const lifecycle = new EventTarget();
+    const onCommit = vi.fn<PressToTalkOptions["onCommit"]>(async () => { throw new Error("ASR unavailable"); });
+    const { controller: c, result } = setup({
+      onCommit, captureOptions: { pageLifecycleTarget: lifecycle }
+    });
+    await c.start({ intent: "dictate" }); c.stop(); result.resolve(audio()); await flush();
+    expect(c.getSnapshot().canRetryTranscription).toBe(true);
+    lifecycle.dispatchEvent(new Event("pagehide"));
+    expect(c.getSnapshot().canRetryTranscription).toBe(false);
+    await c.retryTranscription();
+    expect(onCommit).toHaveBeenCalledOnce();
+  });
+});

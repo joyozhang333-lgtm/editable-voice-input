@@ -237,7 +237,7 @@
 .evi-ptt-hold[data-recording="true"] { background: #e4f3eb; border-color: #92bea5; }
 .evi-ptt-hold[data-cancelling="true"] { background: #fce9ec; color: var(--evi-danger); border-color: #d6949f; }
 .evi-ptt-icon:hover { background: var(--evi-surface); }
-.evi-ptt-icon:focus-visible, .evi-ptt-hold:focus-visible { outline: 2px solid var(--evi-accent); outline-offset: 2px; }
+.evi-ptt-icon:focus-visible, .evi-ptt-hold:focus-visible, .evi-ptt-retry:focus-visible { outline: 2px solid var(--evi-accent); outline-offset: 2px; }
 .evi-ptt-icon:disabled, .evi-ptt-hold[aria-disabled="true"] { opacity: 0.5; cursor: default; }
 .evi-ptt-send { margin-left: auto; background: var(--evi-accent); color: white; }
 .evi-ptt-send:hover { background: #116541; }
@@ -245,6 +245,11 @@
 .evi-ptt-suggestion { padding: 8px 0; font-size: 14px; overflow-wrap: anywhere; }
 .evi-ptt-suggestion p { white-space: pre-wrap; }
 .evi-ptt .evi-status { overflow-wrap: anywhere; }
+.evi-ptt-retry {
+  min-height: 44px; padding: 0 12px; border: 1px solid var(--evi-border);
+  border-radius: 8px; background: var(--evi-surface); color: var(--evi-text);
+  font: inherit; font-size: 14px; cursor: pointer;
+}
 
 @media (max-width: 420px) {
   .evi-preview {

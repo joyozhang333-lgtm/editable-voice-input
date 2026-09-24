@@ -37,6 +37,8 @@ export interface PressToTalkSnapshot {
   readonly recordingId: string | null;
   readonly elapsedMs: number;
   readonly error: VoiceInputError | null;
+  /** A completed dictate take can be retried explicitly without recording again. */
+  readonly canRetryTranscription: boolean;
 }
 
 export interface PressToTalkOptions {
@@ -69,6 +71,13 @@ interface Operation {
   stopRequested: boolean;
 }
 
+interface RetryableTranscription {
+  audio: CapturedAudio;
+  sessionKey: string;
+  recordingId: string;
+  source: PressToTalkCommit["source"];
+}
+
 /** No networking, persistence, Web Speech, or implicit transcript submission. */
 export class PressToTalkController {
   private readonly capture: VoiceCaptureController;
@@ -77,6 +86,7 @@ export class PressToTalkController {
   private snapshot: PressToTalkSnapshot;
   private readonly listeners = new Set<() => void>();
   private operation: Operation | null = null;
+  private retryableTranscription: RetryableTranscription | null = null;
   private session: VoiceCaptureSession | null = null;
   private pointer: { id: number; originY: number } | null = null;
   private revision = 0;
@@ -101,7 +111,8 @@ export class PressToTalkController {
       sessionKey: options.sessionKey,
       recordingId: null,
       elapsedMs: 0,
-      error: null
+      error: null,
+      canRetryTranscription: false
     });
   }
 
@@ -200,6 +211,31 @@ export class PressToTalkController {
     this.update(this.idleState());
   };
 
+  /** Retry only an already captured dictate take. Never retries or sends a voice message. */
+  readonly retryTranscription = async (): Promise<void> => {
+    const retry = this.retryableTranscription;
+    if (
+      this.disposed || !retry || this.snapshot.phase !== "error" ||
+      retry.sessionKey !== this.snapshot.sessionKey
+    ) return;
+    this.invalidate();
+    const operation: Operation = {
+      intent: "dictate", source: retry.source, sessionKey: retry.sessionKey,
+      recordingId: retry.recordingId, abort: new AbortController(),
+      draft: this.snapshot.text, revision: this.revision, stopRequested: true
+    };
+    this.operation = operation;
+    this.watchLifecycle();
+    if (!this.isCurrent(operation)) return;
+    this.update({
+      phase: "transcribing", mode: "dictate", error: null,
+      recordingId: retry.recordingId, elapsedMs: retry.audio.durationMs,
+      canRetryTranscription: false
+    });
+    if (!this.isCurrent(operation)) return;
+    await this.commitAudio(operation, retry.audio);
+  };
+
   readonly dispose = (): void => {
     if (this.disposed) return;
     this.cancel();
@@ -275,6 +311,10 @@ export class PressToTalkController {
       elapsedMs: audio.durationMs
     });
     if (!this.isCurrent(operation)) return;
+    await this.commitAudio(operation, audio);
+  }
+
+  private async commitAudio(operation: Operation, audio: CapturedAudio): Promise<void> {
     try {
       const result = await this.options.onCommit({
         audio, intent: operation.intent, sessionKey: operation.sessionKey,
@@ -298,23 +338,39 @@ export class PressToTalkController {
       this.update(patch);
     } catch (error) {
       this.fail(operation, error,
-        operation.intent === "dictate" ? "transcription-failed" : "submission-failed");
+        operation.intent === "dictate" ? "transcription-failed" : "submission-failed",
+        operation.intent === "dictate" ? audio : undefined);
     }
   }
 
   private fail(
     operation: Operation,
     error: unknown,
-    code: "recording-failed" | "transcription-failed" | "submission-failed" = "recording-failed"
+    code: "recording-failed" | "transcription-failed" | "submission-failed" = "recording-failed",
+    retryAudio?: CapturedAudio
   ): void {
     if (!this.isCurrent(operation)) return;
     const failure = error instanceof VoiceInputError
       ? error : new VoiceInputError(code, "Voice input could not complete.", { cause: error });
     this.invalidate();
+    const canRetry = Boolean(retryAudio && failure.code !== "capture-cancelled");
+    if (canRetry && retryAudio) {
+      this.retryableTranscription = {
+        audio: retryAudio, sessionKey: operation.sessionKey,
+        recordingId: operation.recordingId, source: operation.source
+      };
+    }
     this.update({
       ...this.idleState(),
-      ...(failure.code === "capture-cancelled" ? {} : { phase: "error", error: failure })
+      ...(failure.code === "capture-cancelled" ? {} : {
+        phase: "error", error: failure,
+        canRetryTranscription: canRetry
+      })
     });
+    if (
+      canRetry && !this.disposed && this.retryableTranscription?.recordingId === operation.recordingId &&
+      this.snapshot.canRetryTranscription
+    ) this.watchLifecycle();
   }
 
   private isCurrent(operation: Operation): boolean {
@@ -337,6 +393,7 @@ export class PressToTalkController {
   private invalidate(): void {
     const operation = this.operation;
     this.operation = null;
+    this.retryableTranscription = null;
     this.pointer = null;
     operation?.abort.abort();
     this.stopTimer();
@@ -355,7 +412,7 @@ export class PressToTalkController {
   private idleState(): Partial<PressToTalkSnapshot> {
     return {
       phase: "idle", error: null, recordingId: null, elapsedMs: 0,
-      cancelPending: false, transcriptSuggestion: null
+      cancelPending: false, transcriptSuggestion: null, canRetryTranscription: false
     };
   }
 

@@ -23,6 +23,7 @@ Editable Voice Input 是一个小而清晰、与转写服务无关的 Web 语音
 
 - 录音默认只存在内存中，只有宿主显式写入 outbox 才会持久化。
 - 转写完成后绝不自动提交。
+- 已完成录音的转写若失败，可由用户明确点击重试同一段音频；发送录音失败不会自动重发，以免重复消息。
 - 用户可以回听、修改文字、重录、取消，最后主动确认提交。
 - 浏览器录音、React 界面、服务端校验、转写服务适配彼此解耦。
 - 实时临时结果不会写进可编辑正文，因此不会反复覆盖用户输入。
@@ -134,6 +135,8 @@ Web Speech 与 MediaRecorder 是两种独立能力。Chromium 通常支持前者
 MediaStream track 结束、页面隐藏或离开时，录音会安全停止并释放麦克风，避免后台继续采集。音频会带上 `terminationReason`；这类生命周期停止不会被当成用户主动“停止即发送”。
 
 服务端处理器默认要求传入 `authorize`，没有鉴权就会拒绝创建；只有明确要做公共接口时才能设置 `allowUnauthenticated: true`。`consumeQuota` 用于在解析和调用上游前接入用户/IP 级限流或额度控制。默认要求 `Origin` 且只接受同源浏览器请求；非浏览器服务端客户端必须明确设置 `allowMissingOrigin: true`，并继续执行鉴权。处理器在调用 provider 前还要求服务端 inspector 返回有限、正数且不超上限的时长；默认实现依赖容器元数据，并不保证接受任意浏览器 Blob，详见下节。
+
+若产品承诺简体中文，可在服务端按 `language: "zh-CN"` 注入 `postprocessTranscript`，仅对返回给用户编辑的 ASR 文本做繁转简；默认不转换，也不捆绑转换库。具体示例见 [server 包说明](./packages/server/README.md#optional-transcript-postprocessing)。
 
 `examples/next-app-router` 仅作为本地开发示例；生产构建会返回 503，直到你把 `authorizeExample` 替换为产品真实的会话鉴权。多实例部署时，限流应使用共享且原子的存储。
 
