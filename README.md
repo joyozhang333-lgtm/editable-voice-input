@@ -11,6 +11,7 @@ Editable Voice Input is a small, provider-neutral toolkit for adding voice input
 - Recording is temporary and stays in memory unless the host explicitly stages it in an outbox.
 - Transcription never auto-submits a message.
 - The user can replay the recording, edit the transcript, retry, cancel, or submit.
+- A completed dictate take can be explicitly retried from retained in-memory audio after ASR failure; failed voice sends are never replayed automatically.
 - Browser capture, React UI, request validation, and transcription providers are separate packages.
 - Live interim speech is never written over the editable value.
 - A post-stop batch transcript replaces streaming text only if the user has not edited it.
@@ -133,6 +134,8 @@ The claim helper moves exactly one `clientTurnId`. For several pending rows, the
 ### Server route
 
 **Browser recording support is not default server-inspection compatibility.** Live WebM from `MediaRecorder` can omit duration metadata even when the Blob plays correctly. The default `inspectAudioDurationMs` then fails closed with HTTP 415 (`invalid-audio-duration`) before calling the provider. `duration: true` is already enabled; it does not derive duration from WebM audio frames in the pinned parser. For these recordings, inject a host-validated `AudioDurationInspector` via `inspectDurationMs`; see [the real interface, injection example and safety requirements](./packages/server/README.md#duration-inspection-and-live-webm). The SDK does not bundle a fallback decoder.
+
+Simplified-Chinese-only products may opt into a server-side `postprocessTranscript` policy, using a host-supplied Traditional-to-Simplified converter when the requested language is `zh-CN`. No conversion happens by default; see the [server integration example](./packages/server/README.md#optional-transcript-postprocessing).
 
 ```ts
 import { createTranscriptionHandler } from "@editable-voice-input/server";

@@ -33,6 +33,7 @@ voice.pointerCancel(1);
 await voice.start({ intent: "dictate" }); // 小 mic 的点击/键盘开始路径
 voice.stop(); // 按本次 intent 停止
 voice.stopToDictate(); // 当前 send 录音转文字，撤销发送意图
+await voice.retryTranscription(); // 仅转写失败后显式重试同一段录音；不会重试发送
 voice.setMode("dictate"); // 切模式取消在途操作，保留草稿
 voice.setText("用户编辑的草稿");
 voice.setSession("demo-session-b", "另一会话草稿");
@@ -42,9 +43,9 @@ unsubscribe();
 voice.dispose();
 ```
 
-`onCommit` 返回 `void | string | { text: string }` 或对应 Promise。仅 `dictate` 分支使用返回的文本；`send` 返回值不写入草稿。回调每段录音最多调用一次，不自动重试。回调成功只代表宿主处理完成，不等同于服务器消息落库。
+`onCommit` 返回 `void | string | { text: string }` 或对应 Promise。仅 `dictate` 分支使用返回的文本；`send` 返回值不写入草稿。每段录音默认只调用一次，不自动重试。若已完成的 `dictate` 录音转写失败，快照的 `canRetryTranscription` 为 `true`，用户可显式调用 `retryTranscription()`，复用内存中的音频（同一 `recordingId`、新的 `AbortSignal`）；无需重新申请麦克风权限。`send` 失败绝不会由这个方法重试，宿主应先按幂等键查明服务器是否已收到。回调成功只代表宿主处理完成，不等同于服务器消息落库。
 
-`getSnapshot()` 返回只读稳定快照：`phase`（idle / requesting-permission / recording / stopping / transcribing / committing / error）、`mode`（send / dictate）、`text`、`transcriptSuggestion`、`cancelPending`、`sessionKey`、`recordingId`、`elapsedMs`、`error`。`subscribe` 只通知变化，不立刻回调；首次渲染主动读取快照。
+`getSnapshot()` 返回只读稳定快照：`phase`（idle / requesting-permission / recording / stopping / transcribing / committing / error）、`mode`（send / dictate）、`text`、`transcriptSuggestion`、`canRetryTranscription`、`cancelPending`、`sessionKey`、`recordingId`、`elapsedMs`、`error`。`subscribe` 只通知变化，不立刻回调；首次渲染主动读取快照。
 
 `pointerDown` 返回是否接受本次主指针；必须配合 Pointer Capture，`pointerup` 也传最终 `clientY`。只处理同一指针。上滑达到阈值为取消，滑回阈值内恢复。`start` 不提交；原生 `<button>` 的 click（含 Enter/Space、辅助技术激活）调用 start/stop，无需持续按键。Escape 调用 cancel。不要同时把一次指针松手产生的 click 当作新的开始。
 
@@ -56,6 +57,7 @@ voice.dispose();
 - `stopToDictate()` 只接受正在录制的音频；权限待决时只取消并进入编辑模式。
 - 转写返回时，原会话和录音已失效就丢弃。原草稿曾被编辑（即使改回原文）就仅设置 `transcriptSuggestion`，不覆盖；未编辑则追加到开始录音时的草稿。
 - `setSession` 每次都创建新隔离边界，即使 key 相同；身份切换/新建消息草稿也应调用它。key 是宿主不透明作用域，不是身份认证凭证。
+- 失败录音只在当前内存中的 `dictate` 控制器保留；取消、新录音、切换模式或会话、页面隐藏/离开、卸载都会丢弃重试资格和音频，不会持久化。重复失败后仍须再次由用户明确点击重试。React `PressToTalkInput` 会在可重试时显示按钮，宿主可覆盖 `retryTranscription` 文案。
 - AbortSignal 是本地尽力取消，不能撤回已送达服务端的请求。宿主必须在转写、IndexedDB 写入、发送之间复查取消和身份；服务器仍需认证/授权/幂等检查。推荐用 `recordingId` 作为同一次发送的幂等键。
 - core 不会把转写当作发送。只有明确松手或标明停止发送的点击/键盘动作才会产生 `intent: "send"`；`dictate` 永远只编辑草稿，文本发送按钮由宿主实现。
 

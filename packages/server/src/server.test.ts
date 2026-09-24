@@ -155,6 +155,50 @@ describe("transcription handler", () => {
     expect(await response.json()).toMatchObject({ durationMs: 1_500 });
   });
 
+  it("applies an opt-in host transcript policy without changing provider output", async () => {
+    const postprocessTranscript = vi.fn((text: string, context: {
+      requestedLanguage?: string; providerLanguage?: string;
+    }) => context.requestedLanguage === "zh-CN"
+      ? text.replace("觀察", "观察").replace("關係", "关系") : text);
+    const handler = createTranscriptionHandler({
+      provider: { transcribe: async () => ({ text: "觀察關係", language: "zh-TW" }) },
+      allowUnauthenticated: true,
+      inspectDurationMs: async () => 1_000,
+      language: "zh-CN",
+      postprocessTranscript
+    });
+    const response = await handler(new Request("https://app.example.test/api/transcribe", {
+      method: "POST",
+      headers: { origin: "https://app.example.test", "content-type": "audio/webm" },
+      body: webm
+    }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ text: "观察关系", language: "zh-TW" });
+    expect(postprocessTranscript).toHaveBeenCalledExactlyOnceWith("觀察關係", {
+      requestedLanguage: "zh-CN", providerLanguage: "zh-TW"
+    });
+  });
+
+  it("does not silently normalize without a host policy or leak postprocessor failures", async () => {
+    const request = () => new Request("https://app.example.test/api/transcribe", {
+      method: "POST",
+      headers: { origin: "https://app.example.test", "content-type": "audio/webm" },
+      body: webm
+    });
+    const options = {
+      provider: { transcribe: async () => "觀察關係" },
+      allowUnauthenticated: true,
+      inspectDurationMs: async () => 1_000
+    };
+    const plain = await createTranscriptionHandler(options)(request());
+    expect(await plain.json()).toMatchObject({ text: "觀察關係" });
+    const failed = await createTranscriptionHandler({
+      ...options, postprocessTranscript: async () => { throw new Error("private converter detail"); }
+    })(request());
+    expect(failed.status).toBe(502);
+    expect(await failed.text()).not.toContain("private converter detail");
+  });
+
   it("rejects an untrusted origin before calling the provider", async () => {
     const transcribe = vi.fn(async () => "never called");
     const handler = createTranscriptionHandler({
